@@ -43,9 +43,6 @@
     "changeset:tag": "changeset tag",
     "changeset:publish": "changeset publish"
   },
-  "overrides": {
-    "hono": ">=4.12.7"
-  },
   "dependencies": {
     "incur": "^0.3.4",
     "yaml": "^2.8.2"

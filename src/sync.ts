@@ -80,10 +80,7 @@ export async function sync(options?: Backend | SyncOptions) {
   try {
     existingContent = await readFile(config.configFile, 'utf-8')
   } catch (e) {
-    const code = (e as NodeJS.ErrnoException).code
-    if (code !== 'ENOENT') {
-      warnings.push(`Could not read existing config: ${(e as Error).message}`)
-    }
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e
   }
 
   // Backup existing config if it has no brainjar markers (first-time takeover)

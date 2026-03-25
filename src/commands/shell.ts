@@ -6,7 +6,7 @@ import { access } from 'node:fs/promises'
 import { requireBrainjarDir } from '../state.js'
 import { sync } from '../sync.js'
 import { getLocalDir } from '../paths.js'
-import { readBrain } from './brain.js'
+import { readBrain } from '../brain.js'
 
 export const shell = Cli.create('shell', {
   description: 'Spawn a subshell with BRAINJAR_* env vars set',
