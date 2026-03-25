@@ -15,7 +15,7 @@ import {
   stripFrontmatter,
   resolveRuleContent,
 } from '../state.js'
-import { readBrain } from './brain.js'
+import { readBrain } from '../brain.js'
 
 export const compose = Cli.create('compose', {
   description: 'Assemble a full subagent prompt from a brain or ad-hoc persona',

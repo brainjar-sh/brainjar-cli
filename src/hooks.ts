@@ -43,12 +43,17 @@ function getSettingsPath(local: boolean): string {
 }
 
 async function readSettings(path: string): Promise<Settings> {
+  let raw: string
   try {
-    const raw = await readFile(path, 'utf-8')
-    return JSON.parse(raw)
+    raw = await readFile(path, 'utf-8')
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === 'ENOENT') return {}
     throw e
+  }
+  try {
+    return JSON.parse(raw)
+  } catch {
+    throw new Error(`Invalid JSON in ${path} — fix the file or delete it and re-run.`)
   }
 }
 

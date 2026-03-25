@@ -4,7 +4,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import { Errors } from 'incur'
 import { paths } from './paths.js'
 import { normalizeSlug, requireBrainjarDir, readState, writeState, withStateLock } from './state.js'
-import { readBrain, type BrainConfig } from './commands/brain.js'
+import { readBrain, type BrainConfig } from './brain.js'
 import { sync } from './sync.js'
 
 const { IncurError } = Errors
