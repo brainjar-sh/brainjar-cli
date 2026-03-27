@@ -16,10 +16,9 @@ You should receive a response within 48 hours. We will work with you to understa
 
 ## Scope
 
-brainjar manages agent configuration files and optionally integrates with credential engines (e.g., Bitwarden). Security issues we care about include:
+brainjar manages agent configuration files — markdown layers that get inlined into agent config files. Security issues we care about include:
 
 - Path traversal or file access outside intended directories
-- Credential leakage (session tokens, API keys)
 - Injection via layer content (markdown files synced to agent configs)
 - State file tampering that could escalate privileges
 

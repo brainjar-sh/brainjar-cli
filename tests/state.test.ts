@@ -6,7 +6,6 @@ import {
   normalizeSlug,
   parseLayerFrontmatter,
   stripFrontmatter,
-  parseIdentity,
   readState,
   writeState,
   withStateLock,
@@ -35,7 +34,6 @@ async function setupTempBrainjar() {
   await mkdir(join(tempDir, 'souls'), { recursive: true })
   await mkdir(join(tempDir, 'personas'), { recursive: true })
   await mkdir(join(tempDir, 'rules'), { recursive: true })
-  await mkdir(join(tempDir, 'identities'), { recursive: true })
 }
 
 describe('normalizeSlug', () => {
@@ -145,23 +143,6 @@ rules:
   })
 })
 
-describe('parseIdentity', () => {
-  test('parses all fields', () => {
-    const content = `name: John Doe\nemail: john@example.com\nengine: bitwarden\n`
-    const result = parseIdentity(content)
-    expect(result.name).toBe('John Doe')
-    expect(result.email).toBe('john@example.com')
-    expect(result.engine).toBe('bitwarden')
-  })
-
-  test('handles missing fields', () => {
-    const result = parseIdentity('')
-    expect(result.name).toBeUndefined()
-    expect(result.email).toBeUndefined()
-    expect(result.engine).toBeUndefined()
-  })
-})
-
 describe('readState / writeState', () => {
   beforeEach(setupTempBrainjar)
   afterEach(async () => {
@@ -171,7 +152,6 @@ describe('readState / writeState', () => {
   test('returns defaults when state file missing', async () => {
     const state = await readState()
     expect(state.backend).toBeNull()
-    expect(state.identity).toBeNull()
     expect(state.soul).toBeNull()
     expect(state.persona).toBeNull()
     expect(state.rules).toEqual([])
@@ -185,7 +165,6 @@ describe('readState / writeState', () => {
   test('roundtrips full state', async () => {
     const original = {
       backend: 'claude' as const,
-      identity: 'fcvb',
       soul: 'straight-shooter',
       persona: 'tech-lead',
       rules: ['security', 'git-discipline', 'testing'],
@@ -193,7 +172,6 @@ describe('readState / writeState', () => {
     await writeState(original)
     const loaded = await readState()
     expect(loaded.backend).toBe('claude')
-    expect(loaded.identity).toBe('fcvb')
     expect(loaded.soul).toBe('straight-shooter')
     expect(loaded.persona).toBe('tech-lead')
     expect(loaded.rules).toEqual(['security', 'git-discipline', 'testing'])
@@ -202,7 +180,6 @@ describe('readState / writeState', () => {
   test('roundtrips state with null fields', async () => {
     const original = {
       backend: null,
-      identity: null,
       soul: null,
       persona: null,
       rules: [] as string[],
@@ -210,7 +187,6 @@ describe('readState / writeState', () => {
     await writeState(original)
     const loaded = await readState()
     expect(loaded.backend).toBeNull()
-    expect(loaded.identity).toBeNull()
     expect(loaded.soul).toBeNull()
     expect(loaded.persona).toBeNull()
     expect(loaded.rules).toEqual([])
@@ -225,21 +201,19 @@ describe('readState / writeState', () => {
     expect(state.rules).toEqual(['valid-rule', 'good_rule'])
   })
 
-  test('nullifies path traversal in soul/persona/identity', async () => {
+  test('nullifies path traversal in soul/persona', async () => {
     await writeFile(
       join(tempDir, 'state.yaml'),
-      'soul: "../evil"\npersona: "a/b"\nidentity: "../../etc"\n'
+      'soul: "../evil"\npersona: "a/b"\n'
     )
     const state = await readState()
     expect(state.soul).toBeNull()
     expect(state.persona).toBeNull()
-    expect(state.identity).toBeNull()
   })
 
   test('preserves rule order', async () => {
     const original = {
       backend: null,
-      identity: null,
       soul: null,
       persona: null,
       rules: ['zulu', 'alpha', 'mike'],
@@ -257,7 +231,7 @@ describe('withStateLock', () => {
   })
 
   test('serializes concurrent state mutations', async () => {
-    await writeState({ backend: 'claude', identity: null, soul: null, persona: null, rules: [] })
+    await writeState({ backend: 'claude', soul: null, persona: null, rules: [] })
 
     // Run two mutations concurrently — each reads, modifies, writes
     await Promise.all([
@@ -280,7 +254,7 @@ describe('withStateLock', () => {
   })
 
   test('releases lock on error', async () => {
-    await writeState({ backend: 'claude', identity: null, soul: null, persona: null, rules: [] })
+    await writeState({ backend: 'claude', soul: null, persona: null, rules: [] })
 
     await expect(
       withStateLock(async () => {
@@ -359,14 +333,12 @@ describe('readLocalState / writeLocalState', () => {
 
   test('roundtrips full local state', async () => {
     const original: LocalState = {
-      identity: 'work',
       soul: 'focused',
       persona: 'reviewer',
       rules: { add: ['security'], remove: ['verbose'] },
     }
     await writeLocalState(original)
     const loaded = await readLocalState()
-    expect(loaded.identity).toBe('work')
     expect(loaded.soul).toBe('focused')
     expect(loaded.persona).toBe('reviewer')
     expect(loaded.rules?.add).toEqual(['security'])
@@ -379,8 +351,8 @@ describe('readLocalState / writeLocalState', () => {
     const loaded = await readLocalState()
     expect(loaded.soul).toBeNull()
     expect(loaded.persona).toBeNull()
-    // identity should be absent (cascade)
-    expect('identity' in loaded).toBe(false)
+    // soul and persona are explicit null (unset)
+    // other keys should be absent (cascade)
   })
 
   test('roundtrips empty rules (no add/remove)', async () => {
@@ -393,11 +365,10 @@ describe('readLocalState / writeLocalState', () => {
 
   test('strips path traversal from local state values', async () => {
     await writeFile(join(localTempDir, 'state.yaml'),
-      'soul: "../evil"\npersona: "a/b"\nidentity: "../../etc"\n')
+      'soul: "../evil"\npersona: "a/b"\n')
     const local = await readLocalState()
     expect(local.soul).toBeNull()
     expect(local.persona).toBeNull()
-    expect(local.identity).toBeNull()
   })
 
   test('strips path traversal from local rules', async () => {
@@ -458,7 +429,6 @@ describe('withLocalStateLock', () => {
 describe('mergeState', () => {
   const globalBase: State = {
     backend: 'claude',
-    identity: 'work',
     soul: 'direct',
     persona: 'tech-lead',
     rules: ['security', 'testing'],
@@ -467,7 +437,6 @@ describe('mergeState', () => {
   test('no local state returns global with scope annotations', () => {
     const effective = mergeState(globalBase, {})
     expect(effective.backend).toBe('claude')
-    expect(effective.identity).toEqual({ value: 'work', scope: 'global' })
     expect(effective.soul).toEqual({ value: 'direct', scope: 'global' })
     expect(effective.persona).toEqual({ value: 'tech-lead', scope: 'global' })
     expect(effective.rules).toEqual([
@@ -543,13 +512,11 @@ describe('mergeState', () => {
 
   test('all layers overridden locally', () => {
     const local: LocalState = {
-      identity: 'oss',
       soul: 'careful',
       persona: 'reviewer',
       rules: { add: ['strict'], remove: ['testing'] },
     }
     const effective = mergeState(globalBase, local)
-    expect(effective.identity).toEqual({ value: 'oss', scope: 'local' })
     expect(effective.soul).toEqual({ value: 'careful', scope: 'local' })
     expect(effective.persona).toEqual({ value: 'reviewer', scope: 'local' })
     expect(effective.rules).toEqual([
@@ -647,7 +614,7 @@ describe('mergeState', () => {
 // --- readEnvState ---
 
 describe('readEnvState', () => {
-  const envKeys = ['BRAINJAR_SOUL', 'BRAINJAR_PERSONA', 'BRAINJAR_IDENTITY', 'BRAINJAR_RULES_ADD', 'BRAINJAR_RULES_REMOVE']
+  const envKeys = ['BRAINJAR_SOUL', 'BRAINJAR_PERSONA', 'BRAINJAR_RULES_ADD', 'BRAINJAR_RULES_REMOVE']
   const saved: Record<string, string | undefined> = {}
 
   beforeEach(() => {
@@ -679,11 +646,6 @@ describe('readEnvState', () => {
     expect(readEnvState().persona).toBe('auditor')
   })
 
-  test('reads identity from BRAINJAR_IDENTITY', () => {
-    process.env.BRAINJAR_IDENTITY = 'oss'
-    expect(readEnvState().identity).toBe('oss')
-  })
-
   test('empty string means explicit unset (null)', () => {
     process.env.BRAINJAR_SOUL = ''
     expect(readEnvState().soul).toBeNull()
@@ -711,26 +673,22 @@ describe('readEnvState', () => {
     expect(readEnvState().rules?.add).toEqual(['valid', 'ok'])
   })
 
-  test('filters invalid slugs from identity/soul/persona', () => {
+  test('filters invalid slugs from soul/persona', () => {
     process.env.BRAINJAR_SOUL = '../evil'
     process.env.BRAINJAR_PERSONA = 'a/b'
-    process.env.BRAINJAR_IDENTITY = 'valid-one'
     const env = readEnvState()
     expect(env.soul).toBeNull()
     expect(env.persona).toBeNull()
-    expect(env.identity).toBe('valid-one')
   })
 
   test('reads all env vars together', () => {
     process.env.BRAINJAR_SOUL = 'paranoid'
     process.env.BRAINJAR_PERSONA = 'auditor'
-    process.env.BRAINJAR_IDENTITY = 'oss'
     process.env.BRAINJAR_RULES_ADD = 'security'
     process.env.BRAINJAR_RULES_REMOVE = 'verbose'
     const env = readEnvState()
     expect(env.soul).toBe('paranoid')
     expect(env.persona).toBe('auditor')
-    expect(env.identity).toBe('oss')
     expect(env.rules?.add).toEqual(['security'])
     expect(env.rules?.remove).toEqual(['verbose'])
   })

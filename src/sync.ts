@@ -1,4 +1,4 @@
-import { readFile, writeFile, copyFile, mkdir, access } from 'node:fs/promises'
+import { readFile, writeFile, copyFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { type Backend, getBackendConfig, paths } from './paths.js'
 import { type State, readState, readLocalState, readEnvState, mergeState, requireBrainjarDir, stripFrontmatter, resolveRuleContent } from './state.js'
@@ -38,17 +38,6 @@ async function inlineRules(rules: string[], sections: string[], warnings: string
       sections.push(content)
     }
   }
-}
-
-async function inlineIdentity(name: string, sections: string[]) {
-  try {
-    await access(join(paths.identities, `${name}.yaml`))
-    sections.push('')
-    sections.push('## Identity')
-    sections.push('')
-    sections.push(`See ~/.brainjar/identities/${name}.yaml for active identity.`)
-    sections.push('Manage with `brainjar identity [list|use|show]`.')
-  } catch {}
 }
 
 /** Extract content before, inside, and after brainjar markers. */
@@ -115,21 +104,16 @@ export async function sync(options?: Backend | SyncOptions) {
       // But only write rules section if local state has rules overrides
       await inlineRules(activeRules, sections, warnings)
     }
-    if ('identity' in localState && effective.identity.value) {
-      await inlineIdentity(effective.identity.value, sections)
-    }
   } else {
     // Global mode: apply env overrides on top of global state, write all layers
     const effective = mergeState(globalState, {}, envState)
     const effectiveSoul = effective.soul.value
     const effectivePersona = effective.persona.value
     const effectiveRules = effective.rules.filter(r => !r.scope.startsWith('-')).map(r => r.value)
-    const effectiveIdentity = effective.identity.value
 
     if (effectiveSoul) await inlineSoul(effectiveSoul, sections)
     if (effectivePersona) await inlinePersona(effectivePersona, sections)
     await inlineRules(effectiveRules, sections, warnings)
-    if (effectiveIdentity) await inlineIdentity(effectiveIdentity, sections)
 
     // Local Overrides note (only for global config)
     sections.push('')

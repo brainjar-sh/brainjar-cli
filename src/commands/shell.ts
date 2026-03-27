@@ -14,20 +14,19 @@ export const shell = Cli.create('shell', {
     brain: z.string().optional().describe('Brain name — sets soul, persona, and rules from brain file'),
     soul: z.string().optional().describe('Soul override for this session'),
     persona: z.string().optional().describe('Persona override for this session'),
-    identity: z.string().optional().describe('Identity override for this session'),
     'rules-add': z.string().optional().describe('Comma-separated rules to add'),
     'rules-remove': z.string().optional().describe('Comma-separated rules to remove'),
   }),
   async run(c) {
     await requireBrainjarDir()
 
-    const individualFlags = c.options.soul || c.options.persona || c.options.identity
+    const individualFlags = c.options.soul || c.options.persona
       || c.options['rules-add'] || c.options['rules-remove']
 
     if (c.options.brain && individualFlags) {
       throw new IncurError({
         code: 'MUTUALLY_EXCLUSIVE',
-        message: '--brain is mutually exclusive with --soul, --persona, --identity, --rules-add, --rules-remove.',
+        message: '--brain is mutually exclusive with --soul, --persona, --rules-add, --rules-remove.',
         hint: 'Use --brain alone or individual flags, not both.',
       })
     }
@@ -44,7 +43,6 @@ export const shell = Cli.create('shell', {
     } else {
       if (c.options.soul) envOverrides.BRAINJAR_SOUL = c.options.soul
       if (c.options.persona) envOverrides.BRAINJAR_PERSONA = c.options.persona
-      if (c.options.identity) envOverrides.BRAINJAR_IDENTITY = c.options.identity
       if (c.options['rules-add']) envOverrides.BRAINJAR_RULES_ADD = c.options['rules-add']
       if (c.options['rules-remove']) envOverrides.BRAINJAR_RULES_REMOVE = c.options['rules-remove']
     }
@@ -53,7 +51,7 @@ export const shell = Cli.create('shell', {
       throw new IncurError({
         code: 'NO_OVERRIDES',
         message: 'No overrides specified.',
-        hint: 'Use --brain, --soul, --persona, --identity, --rules-add, or --rules-remove.',
+        hint: 'Use --brain, --soul, --persona, --rules-add, or --rules-remove.',
       })
     }
 
@@ -66,7 +64,6 @@ export const shell = Cli.create('shell', {
     const labels: string[] = []
     if (envOverrides.BRAINJAR_SOUL) labels.push(`soul: ${envOverrides.BRAINJAR_SOUL}`)
     if (envOverrides.BRAINJAR_PERSONA) labels.push(`persona: ${envOverrides.BRAINJAR_PERSONA}`)
-    if (envOverrides.BRAINJAR_IDENTITY) labels.push(`identity: ${envOverrides.BRAINJAR_IDENTITY}`)
     if (envOverrides.BRAINJAR_RULES_ADD) labels.push(`+rules: ${envOverrides.BRAINJAR_RULES_ADD}`)
     if (envOverrides.BRAINJAR_RULES_REMOVE) labels.push(`-rules: ${envOverrides.BRAINJAR_RULES_REMOVE}`)
 

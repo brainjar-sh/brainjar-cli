@@ -73,13 +73,12 @@ export async function listAvailableRules(): Promise<string[]> {
 
 export interface State {
   backend: string | null
-  identity: string | null
   soul: string | null
   persona: string | null
   rules: string[]
 }
 
-const DEFAULT_STATE: State = { backend: null, identity: null, soul: null, persona: null, rules: [] }
+const DEFAULT_STATE: State = { backend: null, soul: null, persona: null, rules: [] }
 
 export async function requireBrainjarDir(): Promise<void> {
   try {
@@ -111,20 +110,6 @@ export function stripFrontmatter(content: string): string {
   return content.replace(/\r\n/g, '\n').replace(/^---\n[\s\S]*?\n---\n*/, '').trim()
 }
 
-export function parseIdentity(content: string) {
-  const parsed = parseYaml(content)
-  return {
-    name: parsed?.name as string | undefined,
-    email: parsed?.email as string | undefined,
-    engine: parsed?.engine as string | undefined,
-  }
-}
-
-export async function loadIdentity(slug: string) {
-  const content = await readFile(join(paths.identities, `${slug}.yaml`), 'utf-8')
-  return { slug, content, ...parseIdentity(content) }
-}
-
 /** Return a valid slug or null. Prevents path traversal from state.yaml. */
 function safeName(value: unknown): string | null {
   if (typeof value !== 'string' || !value) return null
@@ -151,7 +136,6 @@ export async function readState(): Promise<State> {
 
   return {
     backend: ((parsed as any).backend === 'claude' || (parsed as any).backend === 'codex') ? (parsed as any).backend : null,
-    identity: safeName((parsed as any).identity),
     soul: safeName((parsed as any).soul),
     persona: safeName((parsed as any).persona),
     rules: Array.isArray((parsed as any).rules)
@@ -209,7 +193,6 @@ export async function withStateLock<T>(fn: () => Promise<T>): Promise<T> {
 export async function writeState(state: State): Promise<void> {
   const doc = {
     backend: state.backend ?? null,
-    identity: state.identity ?? null,
     soul: state.soul ?? null,
     persona: state.persona ?? null,
     rules: state.rules,
@@ -223,7 +206,6 @@ export async function writeState(state: State): Promise<void> {
 
 /** Local state only stores overrides. undefined = cascade, null = explicit unset. */
 export interface LocalState {
-  identity?: string | null
   soul?: string | null
   persona?: string | null
   rules?: {
@@ -240,7 +222,6 @@ export type Scope = 'global' | 'local' | '+local' | '-local' | 'env' | '+env' | 
 /** Effective state after merging global + local + env, with scope annotations. */
 export interface EffectiveState {
   backend: string | null
-  identity: { value: string | null; scope: Scope }
   soul: { value: string | null; scope: Scope }
   persona: { value: string | null; scope: Scope }
   rules: { value: string; scope: Scope }[]
@@ -268,7 +249,6 @@ export async function readLocalState(): Promise<LocalState> {
   const p = parsed as Record<string, unknown>
 
   // For each layer: if key is present, include it (even if null)
-  if ('identity' in p) result.identity = p.identity === null ? null : safeName(p.identity)
   if ('soul' in p) result.soul = p.soul === null ? null : safeName(p.soul)
   if ('persona' in p) result.persona = p.persona === null ? null : safeName(p.persona)
 
@@ -292,7 +272,6 @@ export async function writeLocalState(local: LocalState): Promise<void> {
 
   // Build a clean doc — only include keys that are present in local
   const doc: Record<string, unknown> = {}
-  if ('identity' in local) doc.identity = local.identity ?? null
   if ('soul' in local) doc.soul = local.soul ?? null
   if ('persona' in local) doc.persona = local.persona ?? null
   if (local.rules) {
@@ -313,9 +292,6 @@ export function readEnvState(extraEnv?: Record<string, string>): EnvState {
   const env = extraEnv ? { ...process.env, ...extraEnv } : process.env
   const result: EnvState = {}
 
-  if (env.BRAINJAR_IDENTITY !== undefined) {
-    result.identity = env.BRAINJAR_IDENTITY === '' ? null : safeName(env.BRAINJAR_IDENTITY)
-  }
   if (env.BRAINJAR_SOUL !== undefined) {
     result.soul = env.BRAINJAR_SOUL === '' ? null : safeName(env.BRAINJAR_SOUL)
   }
@@ -352,10 +328,6 @@ function applyOverrides(
 ): EffectiveState {
   const plusScope = `+${scope}` as Scope
   const minusScope = `-${scope}` as Scope
-
-  const identity = 'identity' in overrides
-    ? { value: overrides.identity ?? null, scope: scope as Scope }
-    : base.identity
 
   const soul = 'soul' in overrides
     ? { value: overrides.soul ?? null, scope: scope as Scope }
@@ -395,7 +367,7 @@ function applyOverrides(
     }
   }
 
-  return { backend: base.backend, identity, soul, persona, rules }
+  return { backend: base.backend, soul, persona, rules }
 }
 
 /** Pure merge: global → local → env, each scope overrides the previous. */
@@ -403,7 +375,6 @@ export function mergeState(global: State, local: LocalState, env?: EnvState): Ef
   // Start with global as the base effective state
   const base: EffectiveState = {
     backend: global.backend,
-    identity: { value: global.identity, scope: 'global' },
     soul: { value: global.soul, scope: 'global' },
     persona: { value: global.persona, scope: 'global' },
     rules: global.rules.map(r => ({ value: r, scope: 'global' as Scope })),
