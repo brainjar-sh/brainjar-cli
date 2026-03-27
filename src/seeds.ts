@@ -26,9 +26,7 @@ function obsidianAppConfigWithExclusions() {
     useMarkdownLinks: false,
     alwaysUpdateLinks: true,
     userIgnoreFilters: [
-      'identities/',
       'state.yaml',
-      '.session',
       '.gitignore',
     ],
   }, null, 2)

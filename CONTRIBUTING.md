@@ -74,7 +74,6 @@ src/
   sync.ts           # Inlines active layers into CLAUDE.md / AGENTS.md
   seeds.ts          # Default content seeded by `init --default`
   commands/         # One file per command group (soul.ts, persona.ts, brain.ts, etc.)
-  engines/          # Credential engine integrations (bitwarden)
 ```
 
 - **State cascade:** global (`~/.brainjar/state.yaml`) → local (`.brainjar/state.yaml`) → env vars. `mergeState()` in `state.ts` handles the merge.

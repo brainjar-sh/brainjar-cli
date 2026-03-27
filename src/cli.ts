@@ -2,7 +2,6 @@
 import { Cli } from 'incur'
 import pkg from '../package.json'
 import { init } from './commands/init.js'
-import { identity } from './commands/identity.js'
 import { soul } from './commands/soul.js'
 import { persona } from './commands/persona.js'
 import { rules } from './commands/rules.js'
@@ -16,7 +15,7 @@ import { hooks } from './commands/hooks.js'
 import { pack } from './commands/pack.js'
 
 Cli.create('brainjar', {
-  description: 'Shape how your AI thinks — identity, soul, persona, rules',
+  description: 'Shape how your AI thinks — soul, persona, rules',
   version: pkg.version,
   sync: { depth: 0 },
 })
@@ -26,7 +25,6 @@ Cli.create('brainjar', {
   .command(persona)
   .command(rules)
   .command(brain)
-  .command(identity)
   .command(reset)
   .command(shell)
   .command(compose)

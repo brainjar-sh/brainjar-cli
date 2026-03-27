@@ -18,7 +18,7 @@ let brainjarDir: string
 let backendDir: string
 let origCwd: string
 
-const envKeys = ['BRAINJAR_SOUL', 'BRAINJAR_PERSONA', 'BRAINJAR_IDENTITY', 'BRAINJAR_RULES_ADD', 'BRAINJAR_RULES_REMOVE']
+const envKeys = ['BRAINJAR_SOUL', 'BRAINJAR_PERSONA', 'BRAINJAR_RULES_ADD', 'BRAINJAR_RULES_REMOVE']
 const savedEnv: Record<string, string | undefined> = {}
 
 async function setup() {
@@ -34,7 +34,6 @@ async function setup() {
   await mkdir(join(brainjarDir, 'souls'), { recursive: true })
   await mkdir(join(brainjarDir, 'personas'), { recursive: true })
   await mkdir(join(brainjarDir, 'rules'), { recursive: true })
-  await mkdir(join(brainjarDir, 'identities'), { recursive: true })
 
   origCwd = process.cwd()
   process.chdir(backendDir)
@@ -70,20 +69,14 @@ async function writeRuleFile(name: string, content: string) {
   await writeFile(join(brainjarDir, 'rules', `${name}.md`), content)
 }
 
-async function writeIdentity(slug: string, content: string) {
-  await writeFile(join(brainjarDir, 'identities', `${slug}.yaml`), content)
-}
-
 function setState(state: {
   backend?: string | null
-  identity?: string | null
   soul?: string | null
   persona?: string | null
   rules?: string[]
 }) {
   return writeState({
     backend: state.backend ?? null,
-    identity: state.identity ?? null,
     soul: state.soul ?? null,
     persona: state.persona ?? null,
     rules: state.rules ?? [],
@@ -114,12 +107,10 @@ describe('sync — global mode', () => {
     await writePersona('coder', '# Coder\n\nShip clean code.')
     await writeRuleFile('security', '# Security\n\nNo secrets.')
     await writeRulePack('default', { 'scope.md': '# Scope\n\nStay focused.' })
-    await writeIdentity('me', 'name: Me\nemail: me@test.com\nengine: bitwarden\n')
     await setState({
       soul: 'warrior',
       persona: 'coder',
       rules: ['default', 'security'],
-      identity: 'me',
       backend: 'claude',
     })
 
@@ -128,7 +119,6 @@ describe('sync — global mode', () => {
     await writeLocalState({
       soul: 'warrior',
       persona: 'coder',
-      identity: 'me',
       rules: { add: ['default', 'security'] },
     })
     await sync({ local: true })
@@ -140,13 +130,10 @@ describe('sync — global mode', () => {
     expect(output).toContain('# Coder')
     expect(output).toContain('# Scope')
     expect(output).toContain('# Security')
-    expect(output).toContain('## Identity')
 
     const soulIdx = output.indexOf('## Soul')
     const personaIdx = output.indexOf('## Persona')
-    const identityIdx = output.indexOf('## Identity')
     expect(soulIdx).toBeLessThan(personaIdx)
-    expect(personaIdx).toBeLessThan(identityIdx)
   })
 
   test('warns on missing rule', async () => {
@@ -190,12 +177,10 @@ describe('sync — local mode', () => {
     await writeSoul('warrior', '# Warrior\n\nBold.')
     await writePersona('coder', '# Coder\n\nShip it.')
     await writeRuleFile('security', '# Security\n\nNo secrets.')
-    await writeIdentity('me', 'name: Me\nemail: me@test.com\nengine: bitwarden\n')
     await setState({
       soul: 'warrior',
       persona: 'coder',
       rules: ['security'],
-      identity: 'me',
       backend: 'claude',
     })
 
@@ -207,7 +192,6 @@ describe('sync — local mode', () => {
     expect(output).toContain('## Persona')
     expect(output).toContain('# Coder')
     expect(output).not.toContain('## Soul')
-    expect(output).not.toContain('## Identity')
     expect(output).not.toContain('# Security')
   })
 

@@ -9,7 +9,6 @@ import { init } from '../src/commands/init.js'
 import { soul } from '../src/commands/soul.js'
 import { persona } from '../src/commands/persona.js'
 import { rules } from '../src/commands/rules.js'
-import { identity } from '../src/commands/identity.js'
 import { status } from '../src/commands/status.js'
 import { reset } from '../src/commands/reset.js'
 import { brain } from '../src/commands/brain.js'
@@ -32,7 +31,7 @@ let brainjarDir: string
 let backendDir: string
 let origCwd: string
 
-const envKeys = ['BRAINJAR_SOUL', 'BRAINJAR_PERSONA', 'BRAINJAR_IDENTITY', 'BRAINJAR_RULES_ADD', 'BRAINJAR_RULES_REMOVE']
+const envKeys = ['BRAINJAR_SOUL', 'BRAINJAR_PERSONA', 'BRAINJAR_RULES_ADD', 'BRAINJAR_RULES_REMOVE']
 const savedEnv: Record<string, string | undefined> = {}
 
 async function setup() {
@@ -49,7 +48,6 @@ async function setup() {
   await mkdir(join(brainjarDir, 'personas'), { recursive: true })
   await mkdir(join(brainjarDir, 'rules'), { recursive: true })
   await mkdir(join(brainjarDir, 'brains'), { recursive: true })
-  await mkdir(join(brainjarDir, 'identities'), { recursive: true })
   origCwd = process.cwd()
   process.chdir(backendDir)
 }
@@ -88,14 +86,12 @@ async function run(cli: any, argv: string[]): Promise<{ output: string; exitCode
 
 async function setState(state: Partial<{
   backend: string | null
-  identity: string | null
   soul: string | null
   persona: string | null
   rules: string[]
 }>) {
   return writeState({
     backend: state.backend ?? null,
-    identity: state.identity ?? null,
     soul: state.soul ?? null,
     persona: state.persona ?? null,
     rules: state.rules ?? [],
@@ -358,156 +354,6 @@ describe('rules commands', () => {
   })
 })
 
-// ─── identity ────────────────────────────────────────────────────────────────
-
-describe('identity commands', () => {
-  beforeEach(setup)
-  afterEach(teardown)
-
-  test('create writes identity yaml', async () => {
-    const { parsed } = await run(identity, [
-      'create', 'personal', '--name', 'John Doe', '--email', 'john@test.com', '--format', 'json',
-    ])
-    expect(parsed.identity.slug).toBe('personal')
-    const content = await readFile(join(brainjarDir, 'identities', 'personal.yaml'), 'utf-8')
-    expect(content).toContain('name: John Doe')
-    expect(content).toContain('email: john@test.com')
-    expect(content).toContain('engine: bitwarden')
-  })
-
-  test('create rejects invalid slug', async () => {
-    const { exitCode } = await run(identity, [
-      'create', '../evil', '--name', 'Bad', '--email', 'bad@test.com', '--format', 'json',
-    ])
-    expect(exitCode).toBe(1)
-  })
-
-  test('list returns available identities', async () => {
-    await writeFile(join(brainjarDir, 'identities', 'personal.yaml'), 'name: John\nemail: j@t.com\n')
-    await writeFile(join(brainjarDir, 'identities', 'work.yaml'), 'name: Jane\nemail: w@t.com\n')
-    const { parsed } = await run(identity, ['list', '--format', 'json'])
-    expect(parsed.identities).toHaveLength(2)
-    const slugs = parsed.identities.map((i: any) => i.slug)
-    expect(slugs).toContain('personal')
-    expect(slugs).toContain('work')
-  })
-
-  test('show returns active identity', async () => {
-    await writeFile(join(brainjarDir, 'identities', 'personal.yaml'), 'name: John\nemail: j@t.com\nengine: bitwarden\n')
-    await setState({ identity: 'personal', backend: 'claude' })
-    const { parsed } = await run(identity, ['show', '--format', 'json'])
-    expect(parsed.active).toBe(true)
-    expect(parsed.slug).toBe('personal')
-    expect(parsed.name).toBe('John')
-  })
-
-  test('show returns inactive when no identity set', async () => {
-    await setState({ backend: 'claude' })
-    const { parsed } = await run(identity, ['show', '--format', 'json'])
-    expect(parsed.active).toBe(false)
-  })
-
-  test('use activates identity globally', async () => {
-    await writeFile(join(brainjarDir, 'identities', 'personal.yaml'), 'name: John\nemail: j@t.com\n')
-    await setState({ backend: 'claude' })
-    const { parsed } = await run(identity, ['use', 'personal', '--format', 'json'])
-    expect(parsed.activated).toBe('personal')
-    expect(parsed.local).toBe(false)
-    const state = await readState()
-    expect(state.identity).toBe('personal')
-  })
-
-  test('use activates identity at project level', async () => {
-    await writeFile(join(brainjarDir, 'identities', 'work.yaml'), 'name: Jane\nemail: w@t.com\n')
-    await setState({ backend: 'claude' })
-    const { parsed } = await run(identity, ['use', 'work', '--local', '--format', 'json'])
-    expect(parsed.activated).toBe('work')
-    expect(parsed.local).toBe(true)
-  })
-
-  test('use rejects missing identity', async () => {
-    await setState({ backend: 'claude' })
-    const { exitCode, parsed } = await run(identity, ['use', 'ghost', '--format', 'json'])
-    expect(exitCode).toBe(1)
-    expect(parsed.code).toBe('IDENTITY_NOT_FOUND')
-  })
-
-  test('drop deactivates identity globally', async () => {
-    await writeFile(join(brainjarDir, 'identities', 'personal.yaml'), 'name: John\nemail: j@t.com\n')
-    await setState({ identity: 'personal', backend: 'claude' })
-    const { parsed } = await run(identity, ['drop', '--format', 'json'])
-    expect(parsed.deactivated).toBe(true)
-    expect(parsed.local).toBe(false)
-    const state = await readState()
-    expect(state.identity).toBeNull()
-  })
-
-  test('drop deactivates identity at project level', async () => {
-    await setState({ identity: 'personal', backend: 'claude' })
-    const { parsed } = await run(identity, ['drop', '--local', '--format', 'json'])
-    expect(parsed.deactivated).toBe(true)
-    expect(parsed.local).toBe(true)
-  })
-
-  test('drop --local removes key from local state instead of nullifying', async () => {
-    await writeFile(join(brainjarDir, 'identities', 'personal.yaml'), 'name: John\nemail: j@t.com\n')
-    await setState({ identity: 'personal', backend: 'claude' })
-    await run(identity, ['use', 'personal', '--local', '--format', 'json'])
-    let local = await readLocalState()
-    expect('identity' in local).toBe(true)
-    await run(identity, ['drop', '--local', '--format', 'json'])
-    local = await readLocalState()
-    expect('identity' in local).toBe(false)
-  })
-
-  test('drop errors when no active identity', async () => {
-    await setState({ backend: 'claude' })
-    const { exitCode, parsed } = await run(identity, ['drop', '--format', 'json'])
-    expect(exitCode).toBe(1)
-    expect(parsed.code).toBe('NO_ACTIVE_IDENTITY')
-  })
-
-  test('unlock stores session token', async () => {
-    const { parsed } = await run(identity, ['unlock', 'test-session-token', '--format', 'json'])
-    expect(parsed.unlocked).toBe(true)
-    const session = await readFile(join(brainjarDir, '.session'), 'utf-8')
-    expect(session).toBe('test-session-token')
-  })
-
-  test('unlock reads session from stdin when no arg provided', async () => {
-    const origStdin = process.stdin
-    const { Readable } = await import('node:stream')
-    const mockStdin = Object.assign(Readable.from(['piped-session-token']), { isTTY: false })
-    Object.defineProperty(process, 'stdin', { value: mockStdin, configurable: true })
-    try {
-      const { parsed } = await run(identity, ['unlock', '--format', 'json'])
-      expect(parsed.unlocked).toBe(true)
-      const session = await readFile(join(brainjarDir, '.session'), 'utf-8')
-      expect(session).toBe('piped-session-token')
-    } finally {
-      Object.defineProperty(process, 'stdin', { value: origStdin, configurable: true })
-    }
-  })
-
-  test('unlock errors on TTY with no arg', async () => {
-    const origIsTTY = process.stdin.isTTY
-    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true })
-    try {
-      const { exitCode, parsed } = await run(identity, ['unlock', '--format', 'json'])
-      expect(exitCode).toBe(1)
-      expect(parsed.code).toBe('NO_SESSION')
-    } finally {
-      Object.defineProperty(process.stdin, 'isTTY', { value: origIsTTY, configurable: true })
-    }
-  })
-
-  test('unlock errors on empty stdin', async () => {
-    const { exitCode, parsed } = await run(identity, ['unlock', '--format', 'json'])
-    expect(exitCode).toBe(1)
-    expect(parsed.code).toBe('EMPTY_SESSION')
-  })
-})
-
 // ─── status ──────────────────────────────────────────────────────────────────
 
 describe('status command', () => {
@@ -520,24 +366,14 @@ describe('status command', () => {
     expect(parsed.soul).toEqual({ value: null, scope: 'global' })
     expect(parsed.persona).toEqual({ value: null, scope: 'global' })
     expect(parsed.rules).toEqual([])
-    expect(parsed.identity).toBeNull()
   })
 
   test('returns active layers with scope annotations', async () => {
     await writeFile(join(brainjarDir, 'souls', 'warrior.md'), '# Warrior')
-    await writeFile(join(brainjarDir, 'identities', 'me.yaml'), 'name: Me\nemail: me@t.com\nengine: bitwarden\n')
-    await setState({ soul: 'warrior', persona: null, identity: 'me', rules: ['security'], backend: 'claude' })
+    await setState({ soul: 'warrior', persona: null, rules: ['security'], backend: 'claude' })
     const { parsed } = await run(status, ['--format', 'json'])
     expect(parsed.soul).toEqual({ value: 'warrior', scope: 'global' })
-    expect(parsed.identity.slug).toBe('me')
-    expect(parsed.identity.scope).toBe('global')
     expect(parsed.rules).toEqual([{ value: 'security', scope: 'global' }])
-  })
-
-  test('handles missing identity file gracefully', async () => {
-    await setState({ identity: 'ghost', backend: 'claude' })
-    const { parsed } = await run(status, ['--format', 'json'])
-    expect(parsed.identity.error).toBe('File not found')
   })
 
   test('--global shows only global state', async () => {
@@ -620,12 +456,9 @@ describe('init command', () => {
     await access(join(brainjarDir, 'souls'))
     await access(join(brainjarDir, 'personas'))
     await access(join(brainjarDir, 'rules'))
-    await access(join(brainjarDir, 'identities'))
 
     // Verify .gitignore
     const gitignore = await readFile(join(brainjarDir, '.gitignore'), 'utf-8')
-    expect(gitignore).toContain('identities/')
-    expect(gitignore).toContain('.session')
     expect(gitignore).toContain('state.yaml')
 
     // Verify state
@@ -972,7 +805,7 @@ describe('shell --brain', () => {
 describe('shell command', () => {
   let origShell: string | undefined
   const savedBrainjarEnv: Record<string, string | undefined> = {}
-  const BRAINJAR_KEYS = ['BRAINJAR_SOUL', 'BRAINJAR_PERSONA', 'BRAINJAR_IDENTITY', 'BRAINJAR_RULES_ADD', 'BRAINJAR_RULES_REMOVE']
+  const BRAINJAR_KEYS = ['BRAINJAR_SOUL', 'BRAINJAR_PERSONA', 'BRAINJAR_RULES_ADD', 'BRAINJAR_RULES_REMOVE']
 
   beforeEach(async () => {
     await setup()

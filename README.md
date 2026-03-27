@@ -5,9 +5,9 @@
 [![downloads](https://img.shields.io/npm/dm/@brainjar/cli)](https://www.npmjs.com/package/@brainjar/cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Shape how your AI thinks — identity, soul, persona, rules.
+Shape how your AI thinks — soul, persona, rules.
 
-brainjar manages AI agent behavior through composable layers. Instead of one monolithic config file, you separate **what the agent sounds like** (soul), **how it works** (persona), and **what constraints it follows** (rules). Each layer is a markdown file. Mix and match them per project, per task, or per session.
+brainjar manages AI agent behavior through composable layers. Instead of one monolithic config file, you separate **what the agent sounds like** (soul), **how it works** (persona), and **what constraints it follows** (rules). Each layer is a markdown file. Mix, match, and switch them per project, per task, or per session.
 
 **[Documentation](https://brainjar.sh)** · **[Getting Started](https://brainjar.sh/getting-started/)**
 
@@ -46,10 +46,9 @@ brainjar soul create|list|show|use|drop
 brainjar persona create|list|show|use|drop
 brainjar rules create|list|show|add|remove
 
-brainjar identity create|list|show|use|drop|unlock|get|status|lock
 brainjar pack export|import
 brainjar hooks install|remove|status [--local]
-brainjar shell [--brain|--soul|--persona|--identity|--rules-add|--rules-remove]
+brainjar shell [--brain|--soul|--persona|--rules-add|--rules-remove]
 brainjar reset [--backend claude|codex]
 ```
 

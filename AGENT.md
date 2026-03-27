@@ -4,15 +4,14 @@ This document is for AI coding agents that interact with brainjar. It describes 
 
 ## What brainjar does
 
-brainjar manages composable configuration layers for coding agents. The operator uses it to control your identity, personality (soul), role behavior (persona), and behavioral rules. All layer content lives in `~/.brainjar/`. The CLI reads active layers and inlines them into a single config file (e.g. `~/.claude/CLAUDE.md`).
+brainjar manages composable configuration layers for coding agents. The operator uses it to control your personality (soul), role behavior (persona), and behavioral rules. All layer content lives in `~/.brainjar/`. The CLI reads active layers and inlines them into a single config file (e.g. `~/.claude/CLAUDE.md`).
 
 ## Key concepts
 
-- **Identity** — who you act as (name, email, credential engine). One active at a time.
 - **Soul** — your personality and values. A markdown file in `~/.brainjar/souls/`. One active at a time.
 - **Persona** — role behavior and workflow. A markdown file in `~/.brainjar/personas/`. One active at a time. Personas declare default rules via frontmatter.
 - **Rules** — behavioral constraints. Multiple can be active simultaneously. Files or directories in `~/.brainjar/rules/`.
-- **State** — `~/.brainjar/state.yaml` tracks which identity, soul, persona, and rules are active.
+- **State** — `~/.brainjar/state.yaml` tracks which soul, persona, and rules are active.
 - **Backend** — the agent platform being configured (e.g. `claude`, `codex`). Only relevant for `init` and `reset`.
 
 ## Discovering commands
@@ -21,8 +20,8 @@ Every command is self-describing:
 
 ```bash
 brainjar --help                  # list all commands
-brainjar identity --help         # list identity subcommands
-brainjar identity create --help  # see args and options
+brainjar soul --help             # list soul subcommands
+brainjar soul create --help      # see args and options
 brainjar --llms                  # full machine-readable manifest
 ```
 
@@ -39,17 +38,6 @@ brainjar status
 
 ```bash
 brainjar status
-```
-
-### Credential retrieval
-
-The operator must authenticate with the credential engine themselves (brainjar never handles passwords). You can check status and retrieve credentials once unlocked:
-
-```bash
-brainjar identity status              # check if engine is unlocked
-bw unlock --raw | brainjar identity unlock  # store session token (preferred)
-brainjar identity unlock <session>         # or pass token as arg
-brainjar identity get <item>          # retrieve a credential by name
 ```
 
 ### Switching contexts
@@ -88,7 +76,7 @@ brainjar rules add security --local
 brainjar persona show reviewer    # view any persona by name
 brainjar soul show                # view the active soul
 brainjar rules show security      # view a rule's content
-brainjar status --short           # one-liner: soul | persona | identity
+brainjar status --short           # one-liner: soul | persona
 brainjar soul show --short        # just the active soul name
 ```
 
@@ -116,7 +104,6 @@ brainjar rules show default           # get rule content
 
 ## Important notes
 
-- Identity files are local-only and gitignored. Never suggest committing them.
 - Sync runs automatically after mutating operations (use, drop, add, remove). You rarely need to trigger it manually (`brainjar status --sync`).
 - `persona use` replaces the current rule set with the persona's declared rules from frontmatter.
 - `brainjar reset [--backend claude|codex]` removes the generated config from the backend and restores any backup. Only suggest this if the operator wants to uninstall brainjar.

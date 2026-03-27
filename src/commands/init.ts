@@ -21,14 +21,13 @@ export const init = Cli.create('init', {
       mkdir(paths.personas, { recursive: true }),
       mkdir(paths.rules, { recursive: true }),
       mkdir(paths.brains, { recursive: true }),
-      mkdir(paths.identities, { recursive: true }),
     ])
 
     // Seed the default rule pack
     await seedDefaultRule(paths.rules)
 
     // Build .gitignore — always exclude private files, add .obsidian if vault enabled
-    const gitignoreLines = ['identities/', '.session', 'state.yaml']
+    const gitignoreLines = ['state.yaml']
     if (c.options.obsidian) {
       gitignoreLines.push('.obsidian/', 'templates/')
     }
@@ -53,7 +52,7 @@ export const init = Cli.create('init', {
     const result: Record<string, unknown> = {
       created: brainjarDir,
       backend: c.options.backend,
-      directories: ['souls/', 'personas/', 'rules/', 'brains/', 'identities/'],
+      directories: ['souls/', 'personas/', 'rules/', 'brains/'],
     }
 
     if (c.options.default) {
@@ -63,7 +62,7 @@ export const init = Cli.create('init', {
       result.personas = ['engineer', 'planner', 'reviewer']
       result.next = 'Ready to go. Run `brainjar status` to see your config.'
     } else {
-      result.next = 'Run `brainjar identity create <slug> --name <name> --email <email>` to set up your first identity.'
+      result.next = 'Run `brainjar soul create <name>` to create your first soul.'
     }
 
     if (c.options.obsidian) {
