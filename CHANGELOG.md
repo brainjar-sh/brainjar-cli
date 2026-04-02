@@ -1,5 +1,11 @@
 # brainjar
 
+## 0.4.0
+
+### Minor Changes
+
+- 9b2c04f: Switch server binary distribution to get.brainjar.sh with dynamic version resolution and tarball downloads. Add `brainjar server upgrade` command, version tracking, and update banner plumbing. Flatten default rule pack into individual rules (boundaries, context-recovery, task-completion).
+
 ## 0.3.0
 
 ### Minor Changes
