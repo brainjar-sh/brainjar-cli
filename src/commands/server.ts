@@ -7,19 +7,19 @@ import {
   status as daemonStatus,
   ensureRunning,
   readLogFile,
-  upgradeServer,
 } from '../daemon.js'
-import { readConfig, writeConfig } from '../config.js'
+import { readConfig, writeConfig, activeContext, localContext, contextNameFromUrl, uniqueContextName } from '../config.js'
 import { getApi } from '../client.js'
 import { sync } from '../sync.js'
 
 const { IncurError } = Errors
 import { ErrorCode, createError } from '../errors.js'
 
-function assertLocalMode(config: { server: { mode: string } }, action: string) {
-  if (config.server.mode === 'remote') {
+function assertLocalContext(config: { current_context: string; contexts: Record<string, { mode: string }> }, action: string) {
+  const ctx = config.contexts[config.current_context]
+  if (ctx.mode === 'remote') {
     throw createError(ErrorCode.INVALID_MODE, {
-      message: `Server is in remote mode. Cannot ${action}.`,
+      message: `Active context is remote. Cannot ${action}.`,
     })
   }
 }
@@ -35,6 +35,7 @@ const statusCmd = Cli.create('status', {
       healthy: s.healthy,
       running: s.running,
       pid: s.pid,
+      serverVersion: health.serverVersion ?? null,
       latencyMs: health.latencyMs ?? null,
     }
   },
@@ -44,12 +45,13 @@ const startCmd = Cli.create('start', {
   description: 'Start the local server daemon',
   async run() {
     const config = await readConfig()
-    assertLocalMode(config, 'start')
+    assertLocalContext(config, 'start')
+    const ctx = activeContext(config)
 
     const health = await healthCheck({ timeout: 2000 })
     if (health.healthy) {
       const s = await daemonStatus()
-      return { already_running: true, pid: s.pid, url: config.server.url }
+      return { already_running: true, pid: s.pid, url: ctx.url }
     }
 
     const { pid } = await start()
@@ -58,7 +60,7 @@ const startCmd = Cli.create('start', {
     while (Date.now() < deadline) {
       await new Promise(r => setTimeout(r, 200))
       const check = await healthCheck({ timeout: 2000 })
-      if (check.healthy) return { started: true, pid, url: config.server.url }
+      if (check.healthy) return { started: true, pid, url: ctx.url }
     }
 
     throw createError(ErrorCode.SERVER_START_FAILED, {
@@ -71,7 +73,7 @@ const stopCmd = Cli.create('stop', {
   description: 'Stop the local server daemon',
   async run() {
     const config = await readConfig()
-    assertLocalMode(config, 'stop')
+    assertLocalContext(config, 'stop')
 
     const result = await stop()
     if (!result.stopped) {
@@ -89,9 +91,10 @@ const logsCmd = Cli.create('logs', {
   }),
   async run(c) {
     const config = await readConfig()
+    const local = localContext(config)
 
     if (c.options.follow) {
-      const child = spawn('tail', ['-f', '-n', String(c.options.lines), config.server.log_file], {
+      const child = spawn('tail', ['-f', '-n', String(c.options.lines), local.log_file], {
         stdio: 'inherit',
       })
       await new Promise<void>((resolve) => {
@@ -106,32 +109,31 @@ const logsCmd = Cli.create('logs', {
 })
 
 const localCmd = Cli.create('local', {
-  description: 'Switch to managed local server',
+  description: 'Switch to local server (use `brainjar context use local` instead)',
   async run() {
     const config = await readConfig()
-    config.server.url = 'http://localhost:7742'
-    config.server.mode = 'local'
+    config.current_context = 'local'
     await writeConfig(config)
 
     await ensureRunning()
 
     const api = await getApi()
+    const ctx = activeContext(config)
 
-    // Ensure workspace exists (ignore conflict if already created)
     try {
-      await api.post('/api/v1/workspaces', { name: config.workspace }, { headers: { 'X-Brainjar-Workspace': '' } })
+      await api.post('/api/v1/workspaces', { name: ctx.workspace }, { headers: { 'X-Brainjar-Workspace': '' } })
     } catch (e: any) {
       if (e.code !== 'CONFLICT') throw e
     }
 
     await sync({ api })
 
-    return { mode: 'local', url: config.server.url }
+    return { mode: 'local', url: ctx.url }
   },
 })
 
 const remoteCmd = Cli.create('remote', {
-  description: 'Switch to a remote server',
+  description: 'Switch to a remote server (use `brainjar context add` instead)',
   args: z.object({
     url: z.string().describe('Remote server URL'),
   }),
@@ -144,15 +146,26 @@ const remoteCmd = Cli.create('remote', {
     }
 
     const config = await readConfig()
-    config.server.url = url
-    config.server.mode = 'remote'
+
+    // Find existing context with this URL, or create one
+    let ctxName = Object.entries(config.contexts).find(([, ctx]) => ctx.url === url)?.[0]
+    if (!ctxName) {
+      ctxName = uniqueContextName(contextNameFromUrl(url), config.contexts)
+      config.contexts[ctxName] = {
+        url,
+        mode: 'remote',
+        workspace: 'default',
+      }
+    }
+
+    config.current_context = ctxName
     await writeConfig(config)
 
     const api = await getApi()
+    const ctx = activeContext(config)
 
-    // Ensure workspace exists (ignore conflict if already created)
     try {
-      await api.post('/api/v1/workspaces', { name: config.workspace }, { headers: { 'X-Brainjar-Workspace': '' } })
+      await api.post('/api/v1/workspaces', { name: ctx.workspace }, { headers: { 'X-Brainjar-Workspace': '' } })
     } catch (e: any) {
       if (e.code !== 'CONFLICT') throw e
     }
@@ -160,43 +173,6 @@ const remoteCmd = Cli.create('remote', {
     await sync({ api })
 
     return { mode: 'remote', url }
-  },
-})
-
-const upgradeCmd = Cli.create('upgrade', {
-  description: 'Upgrade the server binary to the latest version',
-  async run() {
-    const config = await readConfig()
-    assertLocalMode(config, 'upgrade')
-
-    // Stop server if running before replacing binary
-    const s = await daemonStatus()
-    const wasRunning = s.running
-
-    if (wasRunning) {
-      await stop()
-    }
-
-    const result = await upgradeServer()
-
-    if (result.alreadyLatest) {
-      if (wasRunning) await start()
-      return { upgraded: false, version: result.version, message: 'Already on latest version' }
-    }
-
-    // Restart if it was running
-    if (wasRunning) {
-      const { pid } = await start()
-      const deadline = Date.now() + 10_000
-      while (Date.now() < deadline) {
-        await new Promise(r => setTimeout(r, 200))
-        const check = await healthCheck({ timeout: 2000 })
-        if (check.healthy) return { upgraded: true, version: result.version, pid, restarted: true }
-      }
-      return { upgraded: true, version: result.version, restarted: false, warning: 'Server upgraded but failed health check after restart' }
-    }
-
-    return { upgraded: true, version: result.version }
   },
 })
 
@@ -209,4 +185,3 @@ export const server = Cli.create('server', {
   .command(logsCmd)
   .command(localCmd)
   .command(remoteCmd)
-  .command(upgradeCmd)

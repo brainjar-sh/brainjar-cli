@@ -53,11 +53,18 @@ export const ErrorCode = {
   SERVER_UNREACHABLE: 'SERVER_UNREACHABLE',
   BINARY_NOT_FOUND: 'BINARY_NOT_FOUND',
   SERVER_START_FAILED: 'SERVER_START_FAILED',
+  SERVER_INCOMPATIBLE: 'SERVER_INCOMPATIBLE',
 
   // Validation
   MUTUALLY_EXCLUSIVE: 'MUTUALLY_EXCLUSIVE',
   MISSING_ARG: 'MISSING_ARG',
   NO_OVERRIDES: 'NO_OVERRIDES',
+
+  // Contexts
+  CONTEXT_NOT_FOUND: 'CONTEXT_NOT_FOUND',
+  CONTEXT_PROTECTED: 'CONTEXT_PROTECTED',
+  CONTEXT_EXISTS: 'CONTEXT_EXISTS',
+  CONTEXT_ACTIVE: 'CONTEXT_ACTIVE',
 
   // Other
   INVALID_MODE: 'INVALID_MODE',
@@ -99,6 +106,12 @@ export const Messages: Partial<Record<ErrorCode, string | ((...args: string[]) =
   PACK_NOT_DIR: (path: string) => `Pack path "${path}" is a file, not a directory. Packs are directories.`,
   PACK_NOT_FOUND: (path: string) => `Pack path "${path}" does not exist.`,
 
+  // Contexts
+  CONTEXT_NOT_FOUND: (name: string) => `Context "${name}" not found.`,
+  CONTEXT_EXISTS: (name: string) => `Context "${name}" already exists.`,
+  CONTEXT_PROTECTED: (name: string) => `Context "${name}" is protected and cannot be removed or renamed.`,
+  CONTEXT_ACTIVE: (name: string) => `Context "${name}" is the active context. Switch first.`,
+
   // Infra
   SERVER_UNREACHABLE: (url: string) => `Cannot reach server at ${url}`,
 }
@@ -132,10 +145,17 @@ export const Hints: Partial<Record<ErrorCode, string | ((...args: string[]) => s
   PACK_DIR_EXISTS: 'Remove the directory first, or use --out to write elsewhere.',
   PACK_NO_MANIFEST: 'A valid pack needs a pack.yaml at its root.',
 
+  // Contexts
+  CONTEXT_NOT_FOUND: 'List available contexts: `brainjar context list`',
+  CONTEXT_EXISTS: 'Pick a different name.',
+  CONTEXT_PROTECTED: 'The local context is always present and cannot be modified.',
+  CONTEXT_ACTIVE: 'Switch to a different context first: `brainjar context use <name>`',
+
   // Infra
   BINARY_NOT_FOUND: 'Install the server: `brainjar init`',
   SERVER_UNREACHABLE: 'Start the server: `brainjar server start`, or set a remote: `brainjar server remote <url>`',
   SERVER_START_FAILED: 'Check server logs: `brainjar server logs`',
+  SERVER_INCOMPATIBLE: 'Run `brainjar upgrade` to update both CLI and server.',
   SERVER_UNAVAILABLE: 'Server is starting up. Retry in a moment, or check: `brainjar server status`',
   UNAUTHORIZED: 'Verify server config: `brainjar server status`',
   SERVER_ERROR: 'Check server logs: `brainjar server logs`',

@@ -4,17 +4,39 @@ import { readFile, writeFile, rm, access, open, chmod, mkdir } from 'node:fs/pro
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Errors } from 'incur'
-import { readConfig } from './config.js'
+import { readConfig, activeContext, localContext } from './config.js'
 import { ErrorCode, createError } from './errors.js'
 
 export const DIST_BASE = 'https://get.brainjar.sh/brainjar-server'
 
+/**
+ * Compare two semver strings. Returns -1, 0, or 1.
+ * Strips leading 'v' prefix. Only compares major.minor.patch.
+ */
+export function compareSemver(a: string, b: string): number {
+  const parse = (v: string) => v.replace(/^v/, '').split('.').map(Number)
+  const pa = parse(a)
+  const pb = parse(b)
+  for (let i = 0; i < 3; i++) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0)
+    if (diff !== 0) return diff > 0 ? 1 : -1
+  }
+  return 0
+}
+
 const { IncurError } = Errors
+
+/**
+ * Minimum server version this CLI is compatible with.
+ * Bump when the CLI depends on server features/API changes.
+ */
+export const MIN_SERVER_VERSION = '0.2.1'
 
 export interface HealthStatus {
   healthy: boolean
   url: string
   latencyMs?: number
+  serverVersion?: string
   error?: string
 }
 
@@ -27,12 +49,26 @@ export interface DaemonStatus {
 }
 
 /**
+ * Assert the server version is compatible with this CLI.
+ * No-op if the server doesn't report a version (old servers).
+ */
+function assertCompatible(serverVersion: string | undefined): void {
+  if (!serverVersion) return
+  if (compareSemver(serverVersion, MIN_SERVER_VERSION) < 0) {
+    throw createError(ErrorCode.SERVER_INCOMPATIBLE, {
+      message: `Server ${serverVersion} is incompatible with this CLI (requires >= ${MIN_SERVER_VERSION}).`,
+    })
+  }
+}
+
+/**
  * Check if the server is healthy.
  * Returns health status without throwing.
  */
 export async function healthCheck(options?: { timeout?: number; url?: string }): Promise<HealthStatus> {
   const config = await readConfig()
-  const url = options?.url ?? config.server.url
+  const ctx = activeContext(config)
+  const url = options?.url ?? ctx.url
   const timeout = options?.timeout ?? 2000
   const start = Date.now()
 
@@ -44,9 +80,9 @@ export async function healthCheck(options?: { timeout?: number; url?: string }):
 
     if (response.status === 200) {
       try {
-        const body = await response.json() as { status?: string }
+        const body = await response.json() as { status?: string; version?: string }
         if (body.status === 'ok') {
-          return { healthy: true, url, latencyMs }
+          return { healthy: true, url, latencyMs, serverVersion: body.version }
         }
       } catch {}
       return { healthy: true, url, latencyMs }
@@ -200,7 +236,8 @@ export async function downloadAndVerify(binPath: string, versionBase: string): P
  */
 export async function ensureBinary(): Promise<void> {
   const config = await readConfig()
-  const binPath = config.server.bin
+  const local = localContext(config)
+  const binPath = local.bin
 
   try {
     await access(binPath)
@@ -221,7 +258,8 @@ export async function ensureBinary(): Promise<void> {
 export async function upgradeServer(): Promise<{ version: string; alreadyLatest: boolean }> {
   const { getInstalledServerVersion, setInstalledServerVersion } = await import('./version-check.js')
   const config = await readConfig()
-  const binPath = config.server.bin
+  const local = localContext(config)
+  const binPath = local.bin
 
   const version = await fetchLatestVersion()
   const installed = await getInstalledServerVersion()
@@ -242,7 +280,8 @@ export async function upgradeServer(): Promise<{ version: string; alreadyLatest:
  */
 export async function start(): Promise<{ pid: number }> {
   const config = await readConfig()
-  const { bin, pid_file, log_file, url } = config.server
+  const local = localContext(config)
+  const { bin, pid_file, log_file, url } = local
 
   try {
     await access(bin)
@@ -290,7 +329,7 @@ export async function start(): Promise<{ pid: number }> {
  */
 export async function stop(): Promise<{ stopped: boolean }> {
   const config = await readConfig()
-  const { pid_file } = config.server
+  const { pid_file } = localContext(config)
 
   const pid = await readPid(pid_file)
   if (pid === null) return { stopped: false }
@@ -324,15 +363,16 @@ export async function stop(): Promise<{ stopped: boolean }> {
  */
 export async function status(): Promise<DaemonStatus> {
   const config = await readConfig()
-  const { mode, url, pid_file } = config.server
+  const ctx = activeContext(config)
+  const local = localContext(config)
 
-  const pid = await readPid(pid_file)
+  const pid = await readPid(local.pid_file)
   const running = pid !== null && isAlive(pid)
-  const health = await healthCheck({ timeout: 2000, url })
+  const health = await healthCheck({ timeout: 2000, url: ctx.url })
 
   return {
-    mode,
-    url,
+    mode: ctx.mode,
+    url: ctx.url,
     running,
     pid: running ? pid : null,
     healthy: health.healthy,
@@ -346,7 +386,7 @@ export async function readLogFile(options?: { lines?: number }): Promise<string>
   const config = await readConfig()
   const lines = options?.lines ?? 50
   try {
-    const content = await readFile(config.server.log_file, 'utf-8')
+    const content = await readFile(localContext(config).log_file, 'utf-8')
     const allLines = content.trimEnd().split('\n')
     return allLines.slice(-lines).join('\n')
   } catch (e) {
@@ -363,21 +403,25 @@ export async function readLogFile(options?: { lines?: number }): Promise<string>
  */
 export async function ensureRunning(): Promise<void> {
   const config = await readConfig()
-  const { mode, url } = config.server
+  const ctx = activeContext(config)
+  const local = localContext(config)
 
   // Check health first — fast path
-  const health = await healthCheck({ timeout: 2000, url })
-  if (health.healthy) return
+  const health = await healthCheck({ timeout: 2000, url: ctx.url })
+  if (health.healthy) {
+    assertCompatible(health.serverVersion)
+    return
+  }
 
-  if (mode === 'remote') {
+  if (ctx.mode === 'remote') {
     throw createError(ErrorCode.SERVER_UNREACHABLE, {
-      params: [url],
-      hint: `Check the URL or run 'brainjar server remote <url>'.`,
+      params: [ctx.url],
+      hint: `Check the URL or run 'brainjar context add <name> <url>'.`,
     })
   }
 
   // Local mode: auto-start
-  await cleanStalePid(config.server.pid_file)
+  await cleanStalePid(local.pid_file)
 
   try {
     await start()
@@ -385,7 +429,7 @@ export async function ensureRunning(): Promise<void> {
     if (e instanceof IncurError) throw e
     throw createError(ErrorCode.SERVER_START_FAILED, {
       message: 'Failed to start brainjar server.',
-      hint: `Check ${config.server.log_file}`,
+      hint: `Check ${local.log_file}`,
     })
   }
 
@@ -393,12 +437,15 @@ export async function ensureRunning(): Promise<void> {
   const deadline = Date.now() + 10_000
   while (Date.now() < deadline) {
     await new Promise(r => setTimeout(r, 200))
-    const check = await healthCheck({ timeout: 2000, url })
-    if (check.healthy) return
+    const check = await healthCheck({ timeout: 2000, url: ctx.url })
+    if (check.healthy) {
+      assertCompatible(check.serverVersion)
+      return
+    }
   }
 
   throw createError(ErrorCode.SERVER_START_FAILED, {
     message: 'Server started but failed health check after 10s.',
-    hint: `Check ${config.server.log_file}`,
+    hint: `Check ${local.log_file}`,
   })
 }

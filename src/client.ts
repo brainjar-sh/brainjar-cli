@@ -1,6 +1,6 @@
 import { Errors } from 'incur'
 import { basename } from 'node:path'
-import { readConfig } from './config.js'
+import { readConfig, activeContext } from './config.js'
 import { getLocalDir } from './paths.js'
 import { access } from 'node:fs/promises'
 import { ensureRunning } from './daemon.js'
@@ -55,11 +55,12 @@ async function detectProject(explicit?: string): Promise<string | null> {
  */
 export async function createClient(options?: ClientOptions): Promise<BrainjarClient> {
   const config = await readConfig()
-  const serverUrl = (options?.serverUrl ?? config.server.url).replace(/\/$/, '')
-  const workspace = options?.workspace ?? config.workspace
+  const ctx = activeContext(config)
+  const serverUrl = (options?.serverUrl ?? ctx.url).replace(/\/$/, '')
+  const workspace = options?.workspace ?? ctx.workspace
   const session = options?.session ?? process.env.BRAINJAR_SESSION ?? null
   const defaultTimeout = options?.timeout ?? 10_000
-  const mode = config.server.mode
+  const mode = ctx.mode
 
   async function request<T>(method: string, path: string, body?: unknown, reqOpts?: RequestOptions): Promise<T> {
     const url = `${serverUrl}${path}`

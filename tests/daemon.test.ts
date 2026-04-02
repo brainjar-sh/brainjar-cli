@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { rm, mkdir, writeFile, readFile, access } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { healthCheck, status, downloadAndVerify, fetchLatestVersion } from '../src/daemon.js'
+import { healthCheck, status, downloadAndVerify, fetchLatestVersion, compareSemver } from '../src/daemon.js'
 
 const TEST_HOME = join(import.meta.dir, '..', '.test-home-daemon')
 let server: ReturnType<typeof Bun.serve> | null = null
@@ -16,7 +16,7 @@ beforeAll(() => {
     fetch(req) {
       const url = new URL(req.url)
       if (url.pathname === '/healthz') {
-        return Response.json({ status: 'ok' })
+        return Response.json({ status: 'ok', version: '0.2.0' })
       }
       return new Response('Not Found', { status: 404 })
     },
@@ -48,6 +48,7 @@ describe('healthCheck', () => {
     expect(result.healthy).toBe(true)
     expect(result.latencyMs).toBeDefined()
     expect(typeof result.latencyMs).toBe('number')
+    expect(result.serverVersion).toBe('0.2.0')
   })
 
   test('returns unhealthy for unreachable server', async () => {
@@ -80,6 +81,32 @@ describe('status', () => {
     )
     const result = await status()
     expect(result.healthy).toBe(false)
+  })
+})
+
+// ─── compareSemver ─────────────────────────────────────────────────────────
+
+describe('compareSemver', () => {
+  test('equal versions', () => {
+    expect(compareSemver('0.2.0', '0.2.0')).toBe(0)
+  })
+
+  test('strips v prefix', () => {
+    expect(compareSemver('v0.2.0', '0.2.0')).toBe(0)
+  })
+
+  test('greater than', () => {
+    expect(compareSemver('0.3.0', '0.2.0')).toBe(1)
+    expect(compareSemver('1.0.0', '0.9.9')).toBe(1)
+  })
+
+  test('less than', () => {
+    expect(compareSemver('0.1.9', '0.2.0')).toBe(-1)
+    expect(compareSemver('0.2.0', '0.2.1')).toBe(-1)
+  })
+
+  test('handles missing patch', () => {
+    expect(compareSemver('0.2', '0.2.0')).toBe(0)
   })
 })
 

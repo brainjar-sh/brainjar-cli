@@ -126,11 +126,11 @@ export async function renderUpdateBanner(currentCliVersion: string): Promise<str
   const lines: string[] = []
 
   if (updates.cli) {
-    lines.push(`  ⬆ brainjar ${updates.cli.latest} available (current: ${updates.cli.current}) — npm update -g @brainjar/cli`)
+    lines.push(`  ⬆ brainjar ${updates.cli.latest} available (current: ${updates.cli.current}) — brainjar upgrade`)
   }
 
   if (updates.server) {
-    lines.push(`  ⬆ server ${updates.server.latest} available (current: ${updates.server.current}) — brainjar server upgrade`)
+    lines.push(`  ⬆ server ${updates.server.latest} available (current: ${updates.server.current}) — brainjar upgrade`)
   }
 
   return lines.length > 0 ? lines.join('\n') : undefined

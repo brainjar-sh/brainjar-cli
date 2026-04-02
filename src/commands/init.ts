@@ -5,7 +5,7 @@ import { buildSeedBundle } from '../seeds.js'
 import { putState } from '../state.js'
 import { sync } from '../sync.js'
 import { getApi } from '../client.js'
-import { readConfig, writeConfig, type Config } from '../config.js'
+import { readConfig, writeConfig, activeContext, isLocalContext, type Config } from '../config.js'
 import { ensureBinary, upgradeServer } from '../daemon.js'
 import type { ApiImportResult } from '../api-types.js'
 
@@ -32,14 +32,18 @@ export const init = Cli.create('init', {
 
     if (!configExists) {
       const config: Config = {
-        server: {
-          url: 'http://localhost:7742',
-          mode: 'local',
-          bin: `${brainjarDir}/bin/brainjar-server`,
-          pid_file: `${brainjarDir}/server.pid`,
-          log_file: `${brainjarDir}/server.log`,
+        version: 2,
+        current_context: 'local',
+        contexts: {
+          local: {
+            url: 'http://localhost:7742',
+            mode: 'local',
+            bin: `${brainjarDir}/bin/brainjar-server`,
+            pid_file: `${brainjarDir}/server.pid`,
+            log_file: `${brainjarDir}/server.log`,
+            workspace: 'default',
+          },
         },
-        workspace: 'default',
         backend: c.options.backend as Backend,
       }
       await writeConfig(config)
@@ -48,9 +52,10 @@ export const init = Cli.create('init', {
     // 3. Ensure server binary exists and is up to date
     await ensureBinary()
     const config = await readConfig()
-    if (config.server.mode === 'local') {
+    const ctx = activeContext(config)
+    if (isLocalContext(ctx)) {
       // Only upgrade if server isn't already running (can't overwrite a running binary)
-      const health = await (await import('../daemon.js')).healthCheck({ timeout: 1000, url: config.server.url })
+      const health = await (await import('../daemon.js')).healthCheck({ timeout: 1000, url: ctx.url })
       if (!health.healthy) {
         await upgradeServer()
       }
@@ -61,7 +66,7 @@ export const init = Cli.create('init', {
 
     // 5. Ensure workspace exists (ignore conflict if already created)
     try {
-      await api.post('/api/v1/workspaces', { name: config.workspace }, { headers: { 'X-Brainjar-Workspace': '' } })
+      await api.post('/api/v1/workspaces', { name: ctx.workspace }, { headers: { 'X-Brainjar-Workspace': '' } })
     } catch (e: any) {
       if (e.code !== 'CONFLICT') throw e
     }
