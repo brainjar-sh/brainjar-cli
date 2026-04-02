@@ -156,7 +156,13 @@ export async function fetchLatestVersion(distBase: string = DIST_BASE): Promise<
       hint: 'Check your network connection or try again later.',
     })
   }
-  return (await response.text()).trim()
+  const version = (await response.text()).trim()
+  if (!/^v?\d+\.\d+\.\d+(-[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?(\+[a-zA-Z0-9.]+)?$/.test(version)) {
+    throw createError(ErrorCode.VALIDATION_ERROR, {
+      message: `Invalid server version string from distribution: "${version}"`,
+    })
+  }
+  return version
 }
 
 /**

@@ -1,5 +1,5 @@
 import { readFile, readdir, writeFile, access, mkdir, stat } from 'node:fs/promises'
-import { join, dirname } from 'node:path'
+import { join, dirname, basename } from 'node:path'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import { Errors } from 'incur'
 import { ErrorCode, createError } from './errors.js'
@@ -127,7 +127,13 @@ export async function exportPack(brainName: string, options: ExportOptions = {})
       const ruleDir = join(packDir, 'rules', ruleSlug)
       await mkdir(ruleDir, { recursive: true })
       for (const entry of rule.entries) {
-        await writeFile(join(ruleDir, entry.name), entry.content)
+        const safeName = basename(entry.name)
+        if (!safeName || safeName !== entry.name) {
+          throw createError(ErrorCode.PACK_INVALID_MANIFEST, {
+            message: `Rule entry name contains invalid path: "${entry.name}"`,
+          })
+        }
+        await writeFile(join(ruleDir, safeName), entry.content)
       }
     }
   }

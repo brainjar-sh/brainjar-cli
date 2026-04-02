@@ -10,6 +10,16 @@ import { checkForUpdates } from './version-check.js'
 import { ErrorCode, createError } from './errors.js'
 import pkg from '../package.json'
 
+const SEMVER_RE = /^v?\d+\.\d+\.\d+(-[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?(\+[a-zA-Z0-9.]+)?$/
+
+function validateVersion(v: string, label: string): void {
+  if (!SEMVER_RE.test(v)) {
+    throw createError(ErrorCode.VALIDATION_ERROR, {
+      message: `Invalid ${label} version string: "${v}"`,
+    })
+  }
+}
+
 export interface ComponentResult {
   upgraded: boolean
   from: string
@@ -59,6 +69,7 @@ export async function upgradeCli(): Promise<ComponentResult> {
   }
 
   const latestVersion = updates.cli.latest
+  validateVersion(latestVersion, 'CLI')
   const pm = detectPackageManager()
 
   try {
