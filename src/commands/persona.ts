@@ -255,6 +255,31 @@ export const persona = Cli.create('persona', {
       return result
     },
   })
+  .command('delete', {
+    description: 'Delete a persona permanently',
+    args: z.object({
+      name: z.string().describe('Persona name to delete'),
+    }),
+    async run(c) {
+      const name = normalizeSlug(c.args.name, 'persona name')
+      const api = await getApi()
+
+      try {
+        await api.delete(`/api/v1/personas/${name}`)
+      } catch (e) {
+        if (e instanceof IncurError && e.code === ErrorCode.NOT_FOUND) {
+          throw createError(ErrorCode.PERSONA_NOT_FOUND, { params: [name] })
+        }
+        throw e
+      }
+
+      // If this persona was active, sync to reflect removal
+      const state = await getEffectiveState(api)
+      if (state.persona === name) await sync({ api })
+
+      return { deleted: name }
+    },
+  })
   .command('drop', {
     description: 'Deactivate the current persona',
     options: z.object({

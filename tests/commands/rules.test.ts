@@ -61,15 +61,15 @@ describe('rules commands', () => {
     expect(parsed.code).toBe(ErrorCode.RULE_NOT_FOUND)
   })
 
-  test('remove sends rules_to_remove mutation', async () => {
+  test('drop sends rules_to_remove mutation', async () => {
     seedRule('security', '# Security')
     setState({ rules: ['security'] })
-    const { parsed } = await run(rules, ['remove', 'security', '--project', '--format', 'json'])
+    const { parsed } = await run(rules, ['drop', 'security', '--project', '--format', 'json'])
     expect(parsed.removed).toBe('security')
   })
 
-  test('remove sends mutation even for inactive rule', async () => {
-    const { parsed } = await run(rules, ['remove', 'ghost', '--format', 'json'])
+  test('drop sends mutation even for inactive rule', async () => {
+    const { parsed } = await run(rules, ['drop', 'ghost', '--format', 'json'])
     expect(parsed.removed).toBe('ghost')
   })
 })

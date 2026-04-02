@@ -213,6 +213,31 @@ export const soul = Cli.create('soul', {
       return { activated: name, project: c.options.project }
     },
   })
+  .command('delete', {
+    description: 'Delete a soul permanently',
+    args: z.object({
+      name: z.string().describe('Soul name to delete'),
+    }),
+    async run(c) {
+      const name = normalizeSlug(c.args.name, 'soul name')
+      const api = await getApi()
+
+      try {
+        await api.delete(`/api/v1/souls/${name}`)
+      } catch (e) {
+        if (e instanceof IncurError && e.code === ErrorCode.NOT_FOUND) {
+          throw createError(ErrorCode.SOUL_NOT_FOUND, { params: [name] })
+        }
+        throw e
+      }
+
+      // If this soul was active, sync to reflect removal
+      const state = await getEffectiveState(api)
+      if (state.soul === name) await sync({ api })
+
+      return { deleted: name }
+    },
+  })
   .command('drop', {
     description: 'Deactivate the current soul',
     options: z.object({

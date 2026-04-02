@@ -194,13 +194,38 @@ export const rules = Cli.create('rules', {
       return { activated: name, project: c.options.project }
     },
   })
-  .command('remove', {
+  .command('delete', {
+    description: 'Delete a rule permanently',
+    args: z.object({
+      name: z.string().describe('Rule name to delete'),
+    }),
+    async run(c) {
+      const name = normalizeSlug(c.args.name, 'rule name')
+      const api = await getApi()
+
+      try {
+        await api.delete(`/api/v1/rules/${name}`)
+      } catch (e) {
+        if (e instanceof IncurError && e.code === ErrorCode.NOT_FOUND) {
+          throw createError(ErrorCode.RULE_NOT_FOUND, { params: [name] })
+        }
+        throw e
+      }
+
+      // If this rule was active, sync to reflect removal
+      const state = await getEffectiveState(api)
+      if (state.rules.includes(name)) await sync({ api })
+
+      return { deleted: name }
+    },
+  })
+  .command('drop', {
     description: 'Deactivate a rule',
     args: z.object({
-      name: z.string().describe('Rule name to remove'),
+      name: z.string().describe('Rule name to deactivate'),
     }),
     options: z.object({
-      project: z.boolean().default(false).describe('Remove rule at project scope'),
+      project: z.boolean().default(false).describe('Deactivate rule at project scope'),
     }),
     async run(c) {
       const name = normalizeSlug(c.args.name, 'rule name')

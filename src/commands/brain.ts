@@ -160,7 +160,26 @@ export const brain = Cli.create('brain', {
     },
   })
   .command('drop', {
-    description: 'Delete a brain',
+    description: 'Deactivate the current brain — clears soul, persona, and rules',
+    options: z.object({
+      project: z.boolean().default(false).describe('Remove project brain override or deactivate workspace brain'),
+    }),
+    async run(c) {
+      const api = await getApi()
+
+      const mutationOpts = c.options.project
+        ? { project: basename(process.cwd()) }
+        : undefined
+      await putState(api, { soul_slug: null, persona_slug: null, rule_slugs: [] }, mutationOpts)
+
+      await sync({ api })
+      if (c.options.project) await sync({ api, project: true })
+
+      return { deactivated: true, project: c.options.project }
+    },
+  })
+  .command('delete', {
+    description: 'Delete a brain permanently',
     args: z.object({
       name: z.string().describe('Brain name to delete'),
     }),
@@ -177,6 +196,6 @@ export const brain = Cli.create('brain', {
         throw e
       }
 
-      return { dropped: name }
+      return { deleted: name }
     },
   })

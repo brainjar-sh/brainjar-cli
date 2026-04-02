@@ -128,15 +128,15 @@ describe('brain commands', () => {
     expect(parsed.code).toBe(ErrorCode.BRAIN_NOT_FOUND)
   })
 
-  test('drop deletes a brain', async () => {
+  test('delete removes a brain permanently', async () => {
     seedBrain('review', 'x', 'y')
-    const { parsed } = await run(brain, ['drop', 'review', '--format', 'json'])
-    expect(parsed.dropped).toBe('review')
+    const { parsed } = await run(brain, ['delete', 'review', '--format', 'json'])
+    expect(parsed.deleted).toBe('review')
     expect(store.brains.has('review')).toBe(false)
   })
 
-  test('drop errors on missing brain', async () => {
-    const { exitCode, parsed } = await run(brain, ['drop', 'ghost', '--format', 'json'])
+  test('delete errors on missing brain', async () => {
+    const { exitCode, parsed } = await run(brain, ['delete', 'ghost', '--format', 'json'])
     expect(exitCode).toBe(1)
     expect(parsed.code).toBe(ErrorCode.BRAIN_NOT_FOUND)
   })
