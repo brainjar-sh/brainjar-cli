@@ -88,13 +88,9 @@ export async function upgradeServerBinary(): Promise<ServerResult> {
   const { getInstalledServerVersion } = await import('./version-check.js')
   const installedVersion = (await getInstalledServerVersion()) ?? 'unknown'
 
-  // Stop server if running before replacing binary
+  // upgradeServer() stops the server internally before replacing the binary
   const s = await daemonStatus()
   const wasRunning = s.running
-
-  if (wasRunning) {
-    await stop()
-  }
 
   const result = await upgradeServer()
 

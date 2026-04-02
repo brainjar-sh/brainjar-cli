@@ -1,6 +1,6 @@
 import { spawn, execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { readFile, writeFile, rm, access, open, chmod, mkdir } from 'node:fs/promises'
+import { readFile, writeFile, rm, access, open, chmod, mkdir, constants } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Errors } from 'incur'
@@ -30,7 +30,7 @@ const { IncurError } = Errors
  * Minimum server version this CLI is compatible with.
  * Bump when the CLI depends on server features/API changes.
  */
-export const MIN_SERVER_VERSION = '0.2.2'
+export const MIN_SERVER_VERSION = '0.2.4'
 
 export interface HealthStatus {
   healthy: boolean
@@ -268,6 +268,12 @@ export async function upgradeServer(): Promise<{ version: string; alreadyLatest:
     return { version, alreadyLatest: true }
   }
 
+  // Stop server before replacing binary to avoid ETXTBSY on Linux
+  const pid = await readPid(localContext(config).pid_file)
+  if (pid !== null && isAlive(pid)) {
+    await stop()
+  }
+
   const versionBase = `${DIST_BASE}/${version}`
   await downloadAndVerify(binPath, versionBase)
   await setInstalledServerVersion(version)
@@ -398,8 +404,24 @@ export async function readLogFile(options?: { lines?: number }): Promise<string>
 }
 
 /**
+ * Try to acquire an exclusive lock file. Returns a release function on success, null if already locked.
+ */
+async function tryLock(lockFile: string): Promise<(() => Promise<void>) | null> {
+  try {
+    const fd = await open(lockFile, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY)
+    await fd.write(String(process.pid))
+    await fd.close()
+    return async () => { await rm(lockFile, { force: true }) }
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'EEXIST') return null
+    throw e
+  }
+}
+
+/**
  * Ensure the server is running and healthy.
  * Called by commands before making API calls.
+ * Uses a file lock to prevent parallel CLI invocations from spawning multiple server processes.
  */
 export async function ensureRunning(): Promise<void> {
   const config = await readConfig()
@@ -420,20 +442,31 @@ export async function ensureRunning(): Promise<void> {
     })
   }
 
-  // Local mode: auto-start
-  await cleanStalePid(local.pid_file)
+  // Local mode: auto-start with file lock to prevent races
+  const lockFile = `${local.pid_file}.lock`
+  const release = await tryLock(lockFile)
 
-  try {
-    await start()
-  } catch (e) {
-    if (e instanceof IncurError) throw e
-    throw createError(ErrorCode.SERVER_START_FAILED, {
-      message: 'Failed to start brainjar server.',
-      hint: `Check ${local.log_file}`,
-    })
+  if (release) {
+    // We hold the lock — we're responsible for starting
+    try {
+      await cleanStalePid(local.pid_file)
+
+      try {
+        await start()
+      } catch (e) {
+        if (e instanceof IncurError) throw e
+        throw createError(ErrorCode.SERVER_START_FAILED, {
+          message: 'Failed to start brainjar server.',
+          hint: `Check ${local.log_file}`,
+        })
+      }
+    } finally {
+      await release()
+    }
   }
 
   // Poll until healthy (200ms intervals, 10s timeout)
+  // Both the lock holder and waiters converge here
   const deadline = Date.now() + 10_000
   while (Date.now() < deadline) {
     await new Promise(r => setTimeout(r, 200))
