@@ -1,14 +1,13 @@
-import { spawn } from 'node:child_process'
+import { spawn, execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFile, writeFile, rm, access, open, chmod, mkdir } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { Errors } from 'incur'
 import { readConfig } from './config.js'
 import { ErrorCode, createError } from './errors.js'
 
-/** Pinned server version — the CLI downloads this exact release. */
-const SERVER_VERSION = 'v0.1.0'
-const RELEASE_BASE = `https://github.com/brainjar-sh/brainjar-server/releases/download/${SERVER_VERSION}`
+export const DIST_BASE = 'https://get.brainjar.sh/brainjar-server'
 
 const { IncurError } = Errors
 
@@ -111,56 +110,93 @@ function detectPlatform(): { os: string; arch: string } {
 }
 
 /**
- * Download a binary and verify its SHA-256 checksum.
+ * Fetch the latest server version from the distribution endpoint.
+ */
+export async function fetchLatestVersion(distBase: string = DIST_BASE): Promise<string> {
+  const response = await fetch(`${distBase}/latest`)
+  if (!response.ok) {
+    throw createError(ErrorCode.BINARY_NOT_FOUND, {
+      message: `Failed to fetch latest server version: HTTP ${response.status}`,
+      hint: 'Check your network connection or try again later.',
+    })
+  }
+  return (await response.text()).trim()
+}
+
+/**
+ * Download a tarball, verify its SHA-256 checksum, and extract the binary.
  * Exported for testing — ensureBinary() is the public entry point.
  */
-export async function downloadAndVerify(binPath: string, releaseBase: string): Promise<void> {
+export async function downloadAndVerify(binPath: string, versionBase: string): Promise<void> {
   const { os, arch } = detectPlatform()
-  const binaryName = `brainjar-server-${os}-${arch}`
-  const binaryUrl = `${releaseBase}/${binaryName}`
-  const checksumsUrl = `${releaseBase}/checksums.txt`
+  const tarballName = `brainjar-server-${os}-${arch}.tar.gz`
+  const tarballUrl = `${versionBase}/${tarballName}`
+  const checksumsUrl = `${versionBase}/checksums.txt`
 
   await mkdir(dirname(binPath), { recursive: true })
 
-  const [checksumsResponse, binaryResponse] = await Promise.all([
+  const [checksumsResponse, tarballResponse] = await Promise.all([
     fetch(checksumsUrl),
-    fetch(binaryUrl),
+    fetch(tarballUrl),
   ])
 
-  if (!binaryResponse.ok) {
+  if (!tarballResponse.ok) {
     throw createError(ErrorCode.BINARY_NOT_FOUND, {
-      message: `Failed to download server binary: HTTP ${binaryResponse.status} from ${binaryUrl}`,
-      hint: `Download manually from ${releaseBase} and place at ${binPath}`,
+      message: `Failed to download server binary: HTTP ${tarballResponse.status} from ${tarballUrl}`,
+      hint: `Download manually from ${versionBase} and place at ${binPath}`,
     })
   }
 
-  const buffer = Buffer.from(await binaryResponse.arrayBuffer())
+  const buffer = Buffer.from(await tarballResponse.arrayBuffer())
 
   if (checksumsResponse.ok) {
     const checksumsText = await checksumsResponse.text()
     const expectedHash = checksumsText
       .split('\n')
-      .find(line => line.includes(binaryName))
+      .find(line => line.includes(tarballName))
       ?.split(/\s+/)[0]
 
     if (expectedHash) {
       const actualHash = createHash('sha256').update(buffer).digest('hex')
       if (actualHash !== expectedHash) {
         throw createError(ErrorCode.BINARY_NOT_FOUND, {
-          message: `Checksum mismatch for ${binaryName}: expected ${expectedHash}, got ${actualHash}`,
+          message: `Checksum mismatch for ${tarballName}: expected ${expectedHash}, got ${actualHash}`,
           hint: 'The download may be corrupted. Retry, or download manually.',
         })
       }
     }
   }
 
-  await writeFile(binPath, buffer)
-  await chmod(binPath, 0o755)
+  // Extract tarball to a temp dir, then move the binary into place
+  const tmpDir = join(tmpdir(), `brainjar-dl-${Date.now()}`)
+  const tarPath = join(tmpDir, tarballName)
+  await mkdir(tmpDir, { recursive: true })
+  await writeFile(tarPath, buffer)
+
+  try {
+    execFileSync('tar', ['xzf', tarPath, '-C', tmpDir])
+    const extractedBin = join(tmpDir, 'brainjar-server')
+
+    // Verify the binary was extracted
+    try {
+      await access(extractedBin)
+    } catch {
+      throw createError(ErrorCode.BINARY_NOT_FOUND, {
+        message: `Tarball did not contain expected brainjar-server binary`,
+      })
+    }
+
+    const binContent = await readFile(extractedBin)
+    await writeFile(binPath, binContent)
+    await chmod(binPath, 0o755)
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true })
+  }
 }
 
 /**
  * Ensure the server binary exists at the configured path.
- * Downloads from GitHub releases if missing, verifies SHA-256 checksum.
+ * Fetches latest version from get.brainjar.sh, downloads tarball, verifies checksum.
  */
 export async function ensureBinary(): Promise<void> {
   const config = await readConfig()
@@ -171,7 +207,33 @@ export async function ensureBinary(): Promise<void> {
     return
   } catch {}
 
-  await downloadAndVerify(binPath, RELEASE_BASE)
+  const { setInstalledServerVersion } = await import('./version-check.js')
+  const version = await fetchLatestVersion()
+  const versionBase = `${DIST_BASE}/${version}`
+  await downloadAndVerify(binPath, versionBase)
+  await setInstalledServerVersion(version)
+}
+
+/**
+ * Download the latest server binary, replacing any existing one.
+ * Returns the version that was installed.
+ */
+export async function upgradeServer(): Promise<{ version: string; alreadyLatest: boolean }> {
+  const { getInstalledServerVersion, setInstalledServerVersion } = await import('./version-check.js')
+  const config = await readConfig()
+  const binPath = config.server.bin
+
+  const version = await fetchLatestVersion()
+  const installed = await getInstalledServerVersion()
+
+  if (installed === version) {
+    return { version, alreadyLatest: true }
+  }
+
+  const versionBase = `${DIST_BASE}/${version}`
+  await downloadAndVerify(binPath, versionBase)
+  await setInstalledServerVersion(version)
+  return { version, alreadyLatest: false }
 }
 
 /**

@@ -1,8 +1,10 @@
 import { describe, test, expect, beforeEach, afterEach, beforeAll, afterAll } from 'bun:test'
 import { createHash } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import { rm, mkdir, writeFile, readFile, access } from 'node:fs/promises'
 import { join } from 'node:path'
-import { healthCheck, status, downloadAndVerify } from '../src/daemon.js'
+import { tmpdir } from 'node:os'
+import { healthCheck, status, downloadAndVerify, fetchLatestVersion } from '../src/daemon.js'
 
 const TEST_HOME = join(import.meta.dir, '..', '.test-home-daemon')
 let server: ReturnType<typeof Bun.serve> | null = null
@@ -81,47 +83,100 @@ describe('status', () => {
   })
 })
 
+// ─── helpers ────────────────────────────────────────────────────────────────
+
+/** Create a .tar.gz containing a single file named `brainjar-server` with given content. */
+function makeTarball(content: Buffer): Buffer {
+  const dir = join(tmpdir(), `brainjar-test-tar-${Date.now()}`)
+  const tarPath = join(dir, 'out.tar.gz')
+  try {
+    require('node:fs').mkdirSync(dir, { recursive: true })
+    require('node:fs').writeFileSync(join(dir, 'brainjar-server'), content, { mode: 0o755 })
+    execFileSync('tar', ['czf', tarPath, '-C', dir, 'brainjar-server'])
+    return require('node:fs').readFileSync(tarPath)
+  } finally {
+    try { require('node:fs').rmSync(dir, { recursive: true, force: true }) } catch {}
+  }
+}
+
+// ─── fetchLatestVersion ─────────────────────────────────────────────────────
+
+describe('fetchLatestVersion', () => {
+  let versionServer: ReturnType<typeof Bun.serve>
+
+  afterAll(() => { versionServer?.stop() })
+
+  test('returns trimmed version string', async () => {
+    versionServer = Bun.serve({
+      port: 0,
+      fetch(req) {
+        if (new URL(req.url).pathname === '/latest') return new Response('v0.2.0\n')
+        return new Response('Not Found', { status: 404 })
+      },
+    })
+    const version = await fetchLatestVersion(`http://localhost:${versionServer.port}`)
+    expect(version).toBe('v0.2.0')
+  })
+
+  test('throws on HTTP error', async () => {
+    versionServer = Bun.serve({
+      port: 0,
+      fetch() { return new Response('error', { status: 500 }) },
+    })
+    try {
+      await fetchLatestVersion(`http://localhost:${versionServer.port}`)
+      expect(true).toBe(false)
+    } catch (e: any) {
+      expect(e.code).toBe('BINARY_NOT_FOUND')
+    }
+  })
+})
+
 // ─── downloadAndVerify ──────────────────────────────────────────────────────
 
 describe('downloadAndVerify', () => {
   const FAKE_BINARY = Buffer.from('#!/bin/sh\necho fake-server\n')
-  const FAKE_HASH = createHash('sha256').update(FAKE_BINARY).digest('hex')
   const platform = process.platform === 'darwin' ? 'darwin' : 'linux'
   const arch = process.arch === 'arm64' ? 'arm64' : 'amd64'
-  const binaryName = `brainjar-server-${platform}-${arch}`
+  const tarballName = `brainjar-server-${platform}-${arch}.tar.gz`
 
+  let fakeTarball: Buffer
+  let fakeHash: string
   let dlServer: ReturnType<typeof Bun.serve>
   let dlUrl: string
 
   beforeAll(() => {
+    fakeTarball = makeTarball(FAKE_BINARY)
+    fakeHash = createHash('sha256').update(fakeTarball).digest('hex')
+
     dlServer = Bun.serve({
       port: 0,
       fetch(req) {
         const url = new URL(req.url)
 
-        if (url.pathname === `/${binaryName}`) {
-          return new Response(FAKE_BINARY, {
-            headers: { 'Content-Type': 'application/octet-stream' },
+        if (url.pathname === `/${tarballName}`) {
+          return new Response(new Uint8Array(fakeTarball), {
+            headers: { 'Content-Type': 'application/gzip' },
           })
         }
 
         if (url.pathname === '/checksums.txt') {
-          return new Response(`${FAKE_HASH}  ${binaryName}\n`)
+          return new Response(`${fakeHash}  ${tarballName}\n`)
         }
 
-        if (url.pathname === `/bad-checksum/${binaryName}`) {
-          return new Response(FAKE_BINARY, {
-            headers: { 'Content-Type': 'application/octet-stream' },
+        if (url.pathname === `/bad-checksum/${tarballName}`) {
+          return new Response(new Uint8Array(fakeTarball), {
+            headers: { 'Content-Type': 'application/gzip' },
           })
         }
 
         if (url.pathname === '/bad-checksum/checksums.txt') {
-          return new Response(`deadbeef00000000000000000000000000000000000000000000000000000000  ${binaryName}\n`)
+          return new Response(`deadbeef00000000000000000000000000000000000000000000000000000000  ${tarballName}\n`)
         }
 
-        if (url.pathname === `/no-checksums/${binaryName}`) {
-          return new Response(FAKE_BINARY, {
-            headers: { 'Content-Type': 'application/octet-stream' },
+        if (url.pathname === `/no-checksums/${tarballName}`) {
+          return new Response(new Uint8Array(fakeTarball), {
+            headers: { 'Content-Type': 'application/gzip' },
           })
         }
 
@@ -139,11 +194,10 @@ describe('downloadAndVerify', () => {
     dlServer?.stop()
   })
 
-  test('downloads binary and verifies checksum', async () => {
+  test('downloads tarball, verifies checksum, extracts binary', async () => {
     const binPath = join(TEST_HOME, '.brainjar', 'bin', 'brainjar-server')
     await downloadAndVerify(binPath, dlUrl)
 
-    // Binary should exist and be executable
     await access(binPath)
     const content = await readFile(binPath)
     expect(content.toString()).toContain('fake-server')
@@ -153,7 +207,7 @@ describe('downloadAndVerify', () => {
     const binPath = join(TEST_HOME, '.brainjar', 'bin', 'brainjar-server-bad')
     try {
       await downloadAndVerify(binPath, `${dlUrl}/bad-checksum`)
-      expect(true).toBe(false) // should not reach
+      expect(true).toBe(false)
     } catch (e: any) {
       expect(e.code).toBe('BINARY_NOT_FOUND')
       expect(e.message).toContain('Checksum mismatch')

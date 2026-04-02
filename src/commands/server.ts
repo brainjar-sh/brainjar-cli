@@ -7,6 +7,7 @@ import {
   status as daemonStatus,
   ensureRunning,
   readLogFile,
+  upgradeServer,
 } from '../daemon.js'
 import { readConfig, writeConfig } from '../config.js'
 import { getApi } from '../client.js'
@@ -162,6 +163,43 @@ const remoteCmd = Cli.create('remote', {
   },
 })
 
+const upgradeCmd = Cli.create('upgrade', {
+  description: 'Upgrade the server binary to the latest version',
+  async run() {
+    const config = await readConfig()
+    assertLocalMode(config, 'upgrade')
+
+    // Stop server if running before replacing binary
+    const s = await daemonStatus()
+    const wasRunning = s.running
+
+    if (wasRunning) {
+      await stop()
+    }
+
+    const result = await upgradeServer()
+
+    if (result.alreadyLatest) {
+      if (wasRunning) await start()
+      return { upgraded: false, version: result.version, message: 'Already on latest version' }
+    }
+
+    // Restart if it was running
+    if (wasRunning) {
+      const { pid } = await start()
+      const deadline = Date.now() + 10_000
+      while (Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 200))
+        const check = await healthCheck({ timeout: 2000 })
+        if (check.healthy) return { upgraded: true, version: result.version, pid, restarted: true }
+      }
+      return { upgraded: true, version: result.version, restarted: false, warning: 'Server upgraded but failed health check after restart' }
+    }
+
+    return { upgraded: true, version: result.version }
+  },
+})
+
 export const server = Cli.create('server', {
   description: 'Manage the brainjar server',
 })
@@ -171,3 +209,4 @@ export const server = Cli.create('server', {
   .command(logsCmd)
   .command(localCmd)
   .command(remoteCmd)
+  .command(upgradeCmd)

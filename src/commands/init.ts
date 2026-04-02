@@ -6,7 +6,7 @@ import { putState } from '../state.js'
 import { sync } from '../sync.js'
 import { getApi } from '../client.js'
 import { readConfig, writeConfig, type Config } from '../config.js'
-import { ensureBinary } from '../daemon.js'
+import { ensureBinary, upgradeServer } from '../daemon.js'
 import type { ApiImportResult } from '../api-types.js'
 
 export const init = Cli.create('init', {
@@ -45,14 +45,17 @@ export const init = Cli.create('init', {
       await writeConfig(config)
     }
 
-    // 3. Ensure server binary exists (download if needed)
+    // 3. Ensure server binary exists and is up to date
     await ensureBinary()
+    const config = await readConfig()
+    if (config.server.mode === 'local') {
+      await upgradeServer()
+    }
 
     // 4. Start server and get API client
     const api = await getApi()
 
     // 5. Ensure workspace exists (ignore conflict if already created)
-    const config = await readConfig()
     try {
       await api.post('/api/v1/workspaces', { name: config.workspace }, { headers: { 'X-Brainjar-Workspace': '' } })
     } catch (e: any) {
