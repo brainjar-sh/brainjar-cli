@@ -39,6 +39,15 @@ export const soul = Cli.create('soul', {
         lines.push(c.options.description)
         lines.push('')
       }
+      lines.push('## Voice')
+      lines.push('- ')
+      lines.push('')
+      lines.push('## Character')
+      lines.push('- ')
+      lines.push('')
+      lines.push('## Standards')
+      lines.push('- ')
+      lines.push('')
 
       const content = lines.join('\n')
       await api.put<ApiSoul>(`/api/v1/souls/${name}`, { content })
@@ -53,6 +62,47 @@ export const soul = Cli.create('soul', {
         template: `\n${content}`,
         next: `Run \`brainjar soul show ${name}\` to view, then \`brainjar soul use ${name}\` to activate.`,
       }
+    },
+  })
+  .command('update', {
+    description: 'Update a soul\'s content (reads from stdin)',
+    args: z.object({
+      name: z.string().describe('Soul name'),
+    }),
+    async run(c) {
+      const name = normalizeSlug(c.args.name, 'soul name')
+      const api = await getApi()
+
+      // Validate it exists
+      try {
+        await api.get<ApiSoul>(`/api/v1/souls/${name}`)
+      } catch (e) {
+        if (e instanceof IncurError && e.code === ErrorCode.NOT_FOUND) {
+          throw createError(ErrorCode.SOUL_NOT_FOUND, { params: [name] })
+        }
+        throw e
+      }
+
+      const chunks: Uint8Array[] = []
+      for await (const chunk of Bun.stdin.stream()) {
+        chunks.push(chunk)
+      }
+      const content = Buffer.concat(chunks).toString().trim()
+
+      if (!content) {
+        throw createError(ErrorCode.MISSING_ARG, {
+          message: 'No content provided. Pipe content via stdin.',
+          hint: `echo "# ${name}\\n..." | brainjar soul update ${name}`,
+        })
+      }
+
+      await api.put<ApiSoul>(`/api/v1/souls/${name}`, { content })
+
+      // Sync if this soul is active
+      const state = await getEffectiveState(api)
+      if (state.soul === name) await sync({ api })
+
+      return { updated: name }
     },
   })
   .command('list', {

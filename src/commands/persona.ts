@@ -86,6 +86,61 @@ export const persona = Cli.create('persona', {
       }
     },
   })
+  .command('update', {
+    description: 'Update a persona\'s content (reads from stdin)',
+    args: z.object({
+      name: z.string().describe('Persona name'),
+    }),
+    options: z.object({
+      rules: z.array(z.string()).optional().describe('Update bundled rules'),
+    }),
+    async run(c) {
+      const name = normalizeSlug(c.args.name, 'persona name')
+      const api = await getApi()
+
+      // Validate it exists and get current data
+      let existing: ApiPersona
+      try {
+        existing = await api.get<ApiPersona>(`/api/v1/personas/${name}`)
+      } catch (e) {
+        if (e instanceof IncurError && e.code === ErrorCode.NOT_FOUND) {
+          throw createError(ErrorCode.PERSONA_NOT_FOUND, { params: [name] })
+        }
+        throw e
+      }
+
+      const chunks: Uint8Array[] = []
+      for await (const chunk of Bun.stdin.stream()) {
+        chunks.push(chunk)
+      }
+      const content = Buffer.concat(chunks).toString().trim()
+
+      // Validate rules if provided
+      const rulesList = c.options.rules
+      if (rulesList && rulesList.length > 0) {
+        const available = await api.get<ApiRuleList>('/api/v1/rules')
+        const availableSlugs = available.rules.map(r => r.slug)
+        const invalid = rulesList.filter(r => !availableSlugs.includes(r))
+        if (invalid.length > 0) {
+          throw createError(ErrorCode.RULES_NOT_FOUND, {
+            message: `Rules not found: ${invalid.join(', ')}`,
+            hint: `Available rules: ${availableSlugs.join(', ')}`,
+          })
+        }
+      }
+
+      await api.put<ApiPersona>(`/api/v1/personas/${name}`, {
+        content: content || existing.content,
+        bundled_rules: rulesList ?? existing.bundled_rules,
+      })
+
+      // Sync if this persona is active
+      const state = await getEffectiveState(api)
+      if (state.persona === name) await sync({ api })
+
+      return { updated: name, rules: rulesList ?? existing.bundled_rules }
+    },
+  })
   .command('list', {
     description: 'List available personas',
     async run() {

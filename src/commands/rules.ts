@@ -18,7 +18,6 @@ export const rules = Cli.create('rules', {
     }),
     options: z.object({
       description: z.string().optional().describe('One-line description of the rule'),
-      pack: z.boolean().default(false).describe('Create as a rule pack (multiple entries)'),
     }),
     async run(c) {
       const name = normalizeSlug(c.args.name, 'rule name')
@@ -48,16 +47,58 @@ export const rules = Cli.create('rules', {
       })
 
       if (c.agent || c.formatExplicit) {
-        return { created: name, name, pack: c.options.pack, template: scaffold }
+        return { created: name, name, template: scaffold }
       }
 
       return {
         created: name,
         name,
-        pack: c.options.pack,
         template: `\n${scaffold}`,
         next: `Run \`brainjar rules show ${name}\` to view, then \`brainjar rules add ${name}\` to activate.`,
       }
+    },
+  })
+  .command('update', {
+    description: 'Update a rule\'s content (reads from stdin)',
+    args: z.object({
+      name: z.string().describe('Rule name'),
+    }),
+    async run(c) {
+      const name = normalizeSlug(c.args.name, 'rule name')
+      const api = await getApi()
+
+      // Validate it exists
+      try {
+        await api.get<ApiRule>(`/api/v1/rules/${name}`)
+      } catch (e) {
+        if (e instanceof IncurError && e.code === ErrorCode.NOT_FOUND) {
+          throw createError(ErrorCode.RULE_NOT_FOUND, { params: [name] })
+        }
+        throw e
+      }
+
+      const chunks: Uint8Array[] = []
+      for await (const chunk of Bun.stdin.stream()) {
+        chunks.push(chunk)
+      }
+      const content = Buffer.concat(chunks).toString().trim()
+
+      if (!content) {
+        throw createError(ErrorCode.MISSING_ARG, {
+          message: 'No content provided. Pipe content via stdin.',
+          hint: `echo "# ${name}\\n..." | brainjar rules update ${name}`,
+        })
+      }
+
+      await api.put<ApiRule>(`/api/v1/rules/${name}`, {
+        entries: [{ name: `${name}.md`, content }],
+      })
+
+      // Sync if this rule is active
+      const state = await getEffectiveState(api)
+      if (state.rules.includes(name)) await sync({ api })
+
+      return { updated: name }
     },
   })
   .command('list', {
