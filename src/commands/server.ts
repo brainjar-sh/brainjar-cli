@@ -118,7 +118,7 @@ const localCmd = Cli.create('local', {
 
     // Ensure workspace exists (ignore conflict if already created)
     try {
-      await api.post('/api/v1/workspaces', { name: config.workspace })
+      await api.post('/api/v1/workspaces', { name: config.workspace }, { headers: { 'X-Brainjar-Workspace': '' } })
     } catch (e: any) {
       if (e.code !== 'CONFLICT') throw e
     }
@@ -151,7 +151,7 @@ const remoteCmd = Cli.create('remote', {
 
     // Ensure workspace exists (ignore conflict if already created)
     try {
-      await api.post('/api/v1/workspaces', { name: config.workspace })
+      await api.post('/api/v1/workspaces', { name: config.workspace }, { headers: { 'X-Brainjar-Workspace': '' } })
     } catch (e: any) {
       if (e.code !== 'CONFLICT') throw e
     }

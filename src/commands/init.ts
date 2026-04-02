@@ -54,7 +54,7 @@ export const init = Cli.create('init', {
     // 5. Ensure workspace exists (ignore conflict if already created)
     const config = await readConfig()
     try {
-      await api.post('/api/v1/workspaces', { name: config.workspace })
+      await api.post('/api/v1/workspaces', { name: config.workspace }, { headers: { 'X-Brainjar-Workspace': '' } })
     } catch (e: any) {
       if (e.code !== 'CONFLICT') throw e
     }
