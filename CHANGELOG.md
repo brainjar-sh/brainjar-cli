@@ -1,5 +1,11 @@
 # brainjar
 
+## 0.6.1
+
+### Patch Changes
+
+- f3cd28c: Add content versioning commands: `history`, `revert`, and `show --version` for souls, personas, and rules
+
 ## 0.6.0
 
 ### Minor Changes
