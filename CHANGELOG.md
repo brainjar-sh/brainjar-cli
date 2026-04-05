@@ -1,5 +1,11 @@
 # brainjar
 
+## 0.6.5
+
+### Patch Changes
+
+- 8c99633: Fix ETXTBSY on upgrade by unlinking old binary before writing new one
+
 ## 0.6.4
 
 ### Patch Changes
