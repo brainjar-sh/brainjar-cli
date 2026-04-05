@@ -167,6 +167,35 @@ export async function fetchLatestVersion(distBase: string = DIST_BASE): Promise<
 }
 
 /**
+ * Stream a fetch response into a Buffer, showing a progress bar on TTY stderr.
+ */
+async function downloadWithProgress(response: Response, label: string): Promise<Buffer> {
+  const total = Number(response.headers.get('content-length') ?? 0)
+  const isTTY = process.stderr.isTTY
+
+  if (!total || !isTTY || !response.body) {
+    return Buffer.from(await response.arrayBuffer())
+  }
+
+  const chunks: Buffer[] = []
+  let received = 0
+
+  for await (const chunk of response.body) {
+    const buf = Buffer.from(chunk)
+    chunks.push(buf)
+    received += buf.length
+    const pct = Math.round((received / total) * 100)
+    const mb = (received / 1024 / 1024).toFixed(1)
+    const totalMb = (total / 1024 / 1024).toFixed(1)
+    const bar = '█'.repeat(Math.round(pct / 4)) + '░'.repeat(25 - Math.round(pct / 4))
+    process.stderr.write(`\r  ${label}  ${bar}  ${mb}/${totalMb} MB  ${pct}%`)
+  }
+
+  process.stderr.write('\r' + ' '.repeat(80) + '\r')
+  return Buffer.concat(chunks)
+}
+
+/**
  * Download a tarball, verify its SHA-256 checksum, and extract the binary.
  * Exported for testing — ensureBinary() is the public entry point.
  */
@@ -190,7 +219,7 @@ export async function downloadAndVerify(binPath: string, versionBase: string): P
     })
   }
 
-  const buffer = Buffer.from(await tarballResponse.arrayBuffer())
+  const buffer = await downloadWithProgress(tarballResponse, tarballName)
 
   if (checksumsResponse.ok) {
     const checksumsText = await checksumsResponse.text()
