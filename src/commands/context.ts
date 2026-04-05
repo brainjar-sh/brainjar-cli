@@ -209,6 +209,33 @@ const renameCmd = Cli.create('rename', {
   },
 })
 
+const setTokenCmd = Cli.create('set-token', {
+  description: 'Store an API key for a context',
+  args: z.object({
+    name: z.string().describe('Context name'),
+    key: z.string().describe('API key (bjk_...)'),
+  }),
+  async run(c) {
+    const config = await readConfig()
+
+    if (!(c.args.name in config.contexts)) {
+      throw createError(ErrorCode.CONTEXT_NOT_FOUND, { params: [c.args.name] })
+    }
+
+    const ctx = config.contexts[c.args.name]
+    if (isLocalContext(ctx)) {
+      throw createError(ErrorCode.VALIDATION_ERROR, {
+        message: 'Cannot set a token on a local context. Local contexts use auto-generated tokens.',
+      })
+    }
+
+    ctx.token = c.args.key
+    await writeConfig(config)
+
+    return { context: c.args.name, token_set: true }
+  },
+})
+
 export const context = Cli.create('context', {
   description: 'Manage server contexts — named server profiles',
 })
@@ -218,3 +245,4 @@ export const context = Cli.create('context', {
   .command(useCmd)
   .command(showCmd)
   .command(renameCmd)
+  .command(setTokenCmd)

@@ -107,6 +107,32 @@ export interface ApiComposeResult {
   warnings?: string[]
 }
 
+// --- API key types ---
+
+export interface ApiCreateKeyResult {
+  id: string
+  name: string
+  key: string
+  key_prefix: string
+  user_id: string
+  expires_at: string | null
+  created_at: string
+}
+
+export interface ApiKeySummary {
+  id: string
+  name: string
+  key_prefix: string
+  user_id: string
+  expires_at: string | null
+  revoked_at: string | null
+  created_at: string
+}
+
+export interface ApiKeyList {
+  api_keys: ApiKeySummary[]
+}
+
 // --- Content version types ---
 
 export interface ApiVersionSummary {
