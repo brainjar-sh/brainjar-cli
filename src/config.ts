@@ -13,12 +13,14 @@ export interface LocalContext {
   pid_file: string
   log_file: string
   workspace: string
+  auth_token_file?: string
 }
 
 export interface RemoteContext {
   url: string
   mode: 'remote'
   workspace: string
+  token?: string
 }
 
 export type ServerContext = LocalContext | RemoteContext
@@ -197,7 +199,7 @@ function parseV2(p: Record<string, unknown>): Config {
       if (!raw || typeof raw !== 'object') continue
       const ctx = raw as Record<string, unknown>
       if (ctx.mode === 'local') {
-        config.contexts[name] = {
+        const local: LocalContext = {
           url: typeof ctx.url === 'string' ? ctx.url : 'http://localhost:7742',
           mode: 'local',
           bin: typeof ctx.bin === 'string' ? ctx.bin : defLocal.bin,
@@ -205,12 +207,16 @@ function parseV2(p: Record<string, unknown>): Config {
           log_file: typeof ctx.log_file === 'string' ? ctx.log_file : defLocal.log_file,
           workspace: typeof ctx.workspace === 'string' ? ctx.workspace : 'default',
         }
+        if (typeof ctx.auth_token_file === 'string') local.auth_token_file = ctx.auth_token_file
+        config.contexts[name] = local
       } else {
-        config.contexts[name] = {
+        const remote: RemoteContext = {
           url: typeof ctx.url === 'string' ? ctx.url : '',
           mode: 'remote',
           workspace: typeof ctx.workspace === 'string' ? ctx.workspace : 'default',
         }
+        if (typeof ctx.token === 'string') remote.token = ctx.token
+        config.contexts[name] = remote
       }
     }
   }
@@ -287,7 +293,7 @@ export async function writeConfig(config: Config): Promise<void> {
   const contexts = doc.contexts as Record<string, unknown>
   for (const [name, ctx] of Object.entries(config.contexts)) {
     if (isLocalContext(ctx)) {
-      contexts[name] = {
+      const local: Record<string, unknown> = {
         url: ctx.url,
         mode: ctx.mode,
         bin: ctx.bin,
@@ -295,12 +301,16 @@ export async function writeConfig(config: Config): Promise<void> {
         log_file: ctx.log_file,
         workspace: ctx.workspace,
       }
+      if (ctx.auth_token_file) local.auth_token_file = ctx.auth_token_file
+      contexts[name] = local
     } else {
-      contexts[name] = {
+      const remote: Record<string, unknown> = {
         url: ctx.url,
         mode: ctx.mode,
         workspace: ctx.workspace,
       }
+      if (ctx.token) remote.token = ctx.token
+      contexts[name] = remote
     }
   }
 

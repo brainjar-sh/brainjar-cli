@@ -1,8 +1,9 @@
 import { Errors } from 'incur'
-import { basename } from 'node:path'
-import { readConfig, activeContext } from './config.js'
-import { getLocalDir } from './paths.js'
-import { access } from 'node:fs/promises'
+import { basename, join } from 'node:path'
+import { readConfig, activeContext, isLocalContext } from './config.js'
+import type { ServerContext } from './config.js'
+import { getBrainjarDir, getLocalDir } from './paths.js'
+import { access, readFile } from 'node:fs/promises'
 import { ensureRunning } from './daemon.js'
 import { ErrorCode, createError } from './errors.js'
 
@@ -41,6 +42,24 @@ const ERROR_MAP: Record<number, { code: ErrorCode; hint?: string }> = {
   503: { code: ErrorCode.SERVER_UNAVAILABLE, hint: 'Server is not ready. Try again in a moment.' },
 }
 
+async function resolveToken(ctx: ServerContext): Promise<string | null> {
+  const envToken = process.env.BRAINJAR_TOKEN
+  if (envToken) return envToken
+
+  if (isLocalContext(ctx)) {
+    const tokenFile = ctx.auth_token_file ?? join(getBrainjarDir(), 'auth-token')
+    try {
+      return (await readFile(tokenFile, 'utf-8')).trim()
+    } catch {
+      return null // token file doesn't exist yet (server not started)
+    }
+  }
+
+  if (ctx.token) return ctx.token
+
+  return null
+}
+
 async function detectProject(explicit?: string | null): Promise<string | null> {
   if (explicit === null) return null // explicitly suppress auto-detection
   if (explicit) return explicit
@@ -68,11 +87,14 @@ export async function createClient(options?: ClientOptions): Promise<BrainjarCli
     const url = `${serverUrl}${path}`
     const timeout = reqOpts?.timeout ?? defaultTimeout
 
+    const token = await resolveToken(ctx)
+
     const headers: Record<string, string> = {
       'Accept': 'application/json',
       'X-Brainjar-Workspace': workspace,
       ...(reqOpts?.headers ?? {}),
     }
+    if (token) headers['Authorization'] = `Bearer ${token}`
 
     const explicitProject = reqOpts && 'project' in reqOpts ? reqOpts.project : options?.project
     const project = await detectProject(explicitProject)

@@ -17,6 +17,7 @@ import { server } from './commands/server.js'
 import { migrate } from './commands/migrate.js'
 import { upgrade } from './commands/upgrade.js'
 import { context } from './commands/context.js'
+import { apiKey } from './commands/api-key.js'
 
 Cli.create('brainjar', {
   description: 'Shape how your AI thinks — soul, persona, rules',
@@ -39,4 +40,5 @@ Cli.create('brainjar', {
   .command(migrate)
   .command(upgrade)
   .command(context)
+  .command(apiKey)
   .serve()
