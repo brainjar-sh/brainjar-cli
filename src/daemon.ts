@@ -1,6 +1,6 @@
 import { spawn, execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { readFile, writeFile, rm, access, open, chmod, mkdir, constants } from 'node:fs/promises'
+import { readFile, writeFile, rm, access, open, chmod, mkdir, rename, copyFile, constants } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Errors } from 'incur'
@@ -31,7 +31,7 @@ const { IncurError } = Errors
  * Minimum server version this CLI is compatible with.
  * Bump when the CLI depends on server features/API changes.
  */
-export const MIN_SERVER_VERSION = '0.2.4'
+export const MIN_SERVER_VERSION = '0.2.7'
 
 export interface HealthStatus {
   healthy: boolean
@@ -229,9 +229,17 @@ export async function downloadAndVerify(binPath: string, versionBase: string): P
       })
     }
 
-    const binContent = await readFile(extractedBin)
-    await writeFile(binPath, binContent)
-    await chmod(binPath, 0o755)
+    // Avoid ETXTBSY: unlink the old binary first (running process
+    // keeps its inode), then move the new one into place.
+    await chmod(extractedBin, 0o755)
+    await rm(binPath, { force: true })
+    try {
+      await rename(extractedBin, binPath)
+    } catch {
+      // Cross-device rename (tmpdir on different fs) — fall back to copy
+      await copyFile(extractedBin, binPath)
+      await chmod(binPath, 0o755)
+    }
   } finally {
     await rm(tmpDir, { recursive: true, force: true })
   }
@@ -275,27 +283,17 @@ export async function upgradeServer(): Promise<{ version: string; alreadyLatest:
     return { version, alreadyLatest: true }
   }
 
-  // Stop server before replacing binary to avoid ETXTBSY on Linux
-  const pid = await readPid(localContext(config).pid_file)
-  if (pid !== null && isAlive(pid)) {
-    await stop()
-
-    // Verify process is actually dead before replacing binary
-    const deadline = Date.now() + 3000
-    while (Date.now() < deadline && isAlive(pid)) {
-      await new Promise(r => setTimeout(r, 100))
-    }
-    if (isAlive(pid)) {
-      throw createError(ErrorCode.SERVER_START_FAILED, {
-        message: `Server process (PID ${pid}) is still running. Cannot replace binary.`,
-        hint: `Kill it manually: kill -9 ${pid}`,
-      })
-    }
-  }
-
+  // Binary replacement uses rm + rename/copy which avoids ETXTBSY.
+  // The running server keeps its old inode; next restart picks up the new binary.
   const versionBase = `${DIST_BASE}/${version}`
   await downloadAndVerify(binPath, versionBase)
   await setInstalledServerVersion(version)
+
+  // Restart the server on the new binary
+  await stop()
+  await new Promise(r => setTimeout(r, 1000))
+  await start()
+
   return { version, alreadyLatest: false }
 }
 
