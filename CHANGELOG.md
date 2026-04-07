@@ -1,5 +1,12 @@
 # brainjar
 
+## [0.7.5](https://github.com/brainjar-sh/cli/compare/v0.7.4...v0.7.5) (2026-04-07)
+
+
+### Bug Fixes
+
+* prevent double server start during upgrade ([#44](https://github.com/brainjar-sh/cli/issues/44)) ([df338bf](https://github.com/brainjar-sh/cli/commit/df338bf27ca312ab3fcf485c6458e304de9d6ac1))
+
 ## [0.7.4](https://github.com/brainjar-sh/cli/compare/v0.7.3...v0.7.4) (2026-04-07)
 
 
